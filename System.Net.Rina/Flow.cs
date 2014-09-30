@@ -1,7 +1,5 @@
-﻿using System;
-
-//
-//  IPC.cs
+﻿//
+//  Flow.cs
 //
 //  Author:
 //       Ondrej Rysavy <rysavy@fit.vutbr.cz>
@@ -22,26 +20,23 @@
 //  along with this program; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 //
+using System;
+
 namespace System.Net.Rina
 {
 	/// <summary>
-	/// This delegate represent a method that is called for each new request represented by the passed flow object.
+	/// Flow object describes a single communication session between two applications.
 	/// </summary>
-	public delegate void RequestHandler(Flow newFlow);
+	public class Flow
+	{
+		public ApplicationNamingInfo SourceApplication { get; private set; }
+		public ApplicationNamingInfo DestinationApplication { get; private set; }
 
-	/// <summary>
-	/// This interface represents basic IPC API.
-	/// </summary>
-	public interface IIpc {
-		Port AllocateFlow (Flow flow);
-		void DeallocateFlow (Port port);
-
-		void Send(Port port, byte[] data);
-		byte[] Receive(Port port);
-
-		void RegisterApplication (ApplicationNamingInfo appInfo, RequestHandler reqHandler);
-		void DeregisterApplication (ApplicationNamingInfo appInfo);
+		public Flow (ApplicationNamingInfo source, ApplicationNamingInfo destin)
+		{
+			this.SourceApplication = source;
+			this.DestinationApplication = destin;
+		}
 	}
-
 }
 

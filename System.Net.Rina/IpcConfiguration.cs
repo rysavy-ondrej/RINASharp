@@ -1,12 +1,10 @@
-﻿using System;
-
-//
-//  IPC.cs
+﻿ //
+//  IpcConfiguration.cs
 //
 //  Author:
-//       Ondrej Rysavy <rysavy@fit.vutbr.cz>
+//       rysavy <>
 //
-//  Copyright (c) 2014 PRISTINE
+//  Copyright (c) 2014 rysavy
 //
 //  This program is free software; you can redistribute it and/or modify
 //  it under the terms of the GNU General Public License as published by
@@ -22,26 +20,12 @@
 //  along with this program; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 //
+using System;
+
 namespace System.Net.Rina
 {
-	/// <summary>
-	/// This delegate represent a method that is called for each new request represented by the passed flow object.
-	/// </summary>
-	public delegate void RequestHandler(Flow newFlow);
-
-	/// <summary>
-	/// This interface represents basic IPC API.
-	/// </summary>
-	public interface IIpc {
-		Port AllocateFlow (Flow flow);
-		void DeallocateFlow (Port port);
-
-		void Send(Port port, byte[] data);
-		byte[] Receive(Port port);
-
-		void RegisterApplication (ApplicationNamingInfo appInfo, RequestHandler reqHandler);
-		void DeregisterApplication (ApplicationNamingInfo appInfo);
+	public struct IpcConfiguration
+	{
 	}
-
 }
 

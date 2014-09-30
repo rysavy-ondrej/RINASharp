@@ -1,7 +1,5 @@
-﻿using System;
-
-//
-//  IPC.cs
+﻿//
+//  NameService.cs
 //
 //  Author:
 //       Ondrej Rysavy <rysavy@fit.vutbr.cz>
@@ -22,26 +20,28 @@
 //  along with this program; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 //
+using System;
+
 namespace System.Net.Rina
 {
 	/// <summary>
-	/// This delegate represent a method that is called for each new request represented by the passed flow object.
+	/// This process maintains identifiers within the current DIF.
 	/// </summary>
-	public delegate void RequestHandler(Flow newFlow);
+	public abstract class NameService : ApplicationEntity
+	{
+		public NameServiceAE ()
+		{
+		}
 
-	/// <summary>
-	/// This interface represents basic IPC API.
-	/// </summary>
-	public interface IIpc {
-		Port AllocateFlow (Flow flow);
-		void DeallocateFlow (Port port);
+		public Address[] GetApplicationAddresses(string applicationProcessName, string applicationEntityName)
+		{
+			return null;
+		}
 
-		void Send(Port port, byte[] data);
-		byte[] Receive(Port port);
-
-		void RegisterApplication (ApplicationNamingInfo appInfo, RequestHandler reqHandler);
-		void DeregisterApplication (ApplicationNamingInfo appInfo);
+		public System.Threading.Tasks.Task<Address[]> GetApplicationAddressesAsync(string applicationProcessName, string applicationEntityName)
+		{
+			return null;
+		}
 	}
-
 }
 

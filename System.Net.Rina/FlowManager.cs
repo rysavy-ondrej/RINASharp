@@ -1,7 +1,5 @@
-﻿using System;
-
-//
-//  IPC.cs
+﻿//
+//  FlowManager.cs
 //
 //  Author:
 //       Ondrej Rysavy <rysavy@fit.vutbr.cz>
@@ -22,26 +20,21 @@
 //  along with this program; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 //
+using System;
+using System.Collections.Generic;
+
 namespace System.Net.Rina
 {
 	/// <summary>
-	/// This delegate represent a method that is called for each new request represented by the passed flow object.
+	/// Flow manager represents a flow allocator in RINA architecture. It creates and destroys 
+	/// flow instances.
 	/// </summary>
-	public delegate void RequestHandler(Flow newFlow);
-
-	/// <summary>
-	/// This interface represents basic IPC API.
-	/// </summary>
-	public interface IIpc {
-		Port AllocateFlow (Flow flow);
-		void DeallocateFlow (Port port);
-
-		void Send(Port port, byte[] data);
-		byte[] Receive(Port port);
-
-		void RegisterApplication (ApplicationNamingInfo appInfo, RequestHandler reqHandler);
-		void DeregisterApplication (ApplicationNamingInfo appInfo);
+	public class FlowManager
+	{
+		List<FlowInstance> _flows = new List<FlowInstance>();
+		public FlowManager ()
+		{
+		}
 	}
-
 }
 

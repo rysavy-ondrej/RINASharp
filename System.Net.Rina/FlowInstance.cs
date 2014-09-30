@@ -1,7 +1,5 @@
-﻿using System;
-
-//
-//  IPC.cs
+﻿//
+//  FlowInstance.cs
 //
 //  Author:
 //       Ondrej Rysavy <rysavy@fit.vutbr.cz>
@@ -22,26 +20,27 @@
 //  along with this program; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 //
+using System;
+
 namespace System.Net.Rina
 {
 	/// <summary>
-	/// This delegate represent a method that is called for each new request represented by the passed flow object.
+	/// This represents a structure in RINA that keeps information about a single flow. 
 	/// </summary>
-	public delegate void RequestHandler(Flow newFlow);
+	public class FlowInstance
+	{
+		byte [] _readBuffer;
+		byte [] _writeBuffer;
+		Flow _flowInfo;
 
-	/// <summary>
-	/// This interface represents basic IPC API.
-	/// </summary>
-	public interface IIpc {
-		Port AllocateFlow (Flow flow);
-		void DeallocateFlow (Port port);
+		IIpc _underlayingIpc; 
+		Port _localPort;
+		int flowId;
 
-		void Send(Port port, byte[] data);
-		byte[] Receive(Port port);
-
-		void RegisterApplication (ApplicationNamingInfo appInfo, RequestHandler reqHandler);
-		void DeregisterApplication (ApplicationNamingInfo appInfo);
+		public FlowInstance (Flow flowInfo)
+		{
+			this._flowInfo = flowInfo;
+		}
 	}
-
 }
 
