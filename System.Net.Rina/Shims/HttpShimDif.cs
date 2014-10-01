@@ -1,10 +1,10 @@
 ﻿//
-//  DataTransferAE.cs
+//  HttpShimDif.cs
 //
 //  Author:
 //       Ondrej Rysavy <rysavy@fit.vutbr.cz>
 //
-//  Copyright (c) 2014 PRISTINE
+//  Copyright (c) 2014 PRISTINE Consortium (http://ict-pristine.eu)
 //
 //  This program is free software; you can redistribute it and/or modify
 //  it under the terms of the GNU General Public License as published by
@@ -25,64 +25,47 @@ using System;
 namespace System.Net.Rina
 {
 	/// <summary>
-	/// This AE should implement sending and receiving data within this DIF. It serves all FlowInstance
-	/// checking their buffers for available data. 
+	/// This class implement a simple Http shim dif. This DIF uses HTTP protocol for transfering data 
+	/// and DNS system for naming. Routing is simply IP routing.
 	/// </summary>
-	public class DataTransferService : ApplicationEntity
+	/// <remarks>
+	/// Each DIF implement IPCContext interface providing data transfer and addressing functions for upper DIFs. 
+	/// Then DIF should run management, routing, naming and data transfer AE.
+	/// </remarks>
+	public class HttpShimDif : IpcContext
 	{
-		public FlowManager FlowManager { get; private set; }
-		public DataTransferService (FlowManager flowManager) : base("DataTransfer", "1", "DataTransferProtocol", "1")
+		public HttpShimDif ()
 		{
-			this.FlowManager = flowManager;
-		}
-
-		#region implemented abstract members of ApplicationEntity
-
-		protected override bool Initialize ()
-		{
-			throw new NotImplementedException ();
 		}
 
 
-		protected override void Run ()
-		{
-			while (true) {
 
-			}
-		}
 
-		protected override void Finalize ()
+		#region IpcContext implementation
+		public override Port AllocateFlow (FlowInformation flow)
 		{
 			throw new NotImplementedException ();
 		}
-
-		#endregion
-	}
-
-
-	public class DataTransferControlService : ApplicationEntity
-	{
-		public DataTransferControlService () : base("DataTransfer", "1", "DataTransferControlProtocol", "1")
-		{
-		}
-
-		#region implemented abstract members of ApplicationEntity
-
-		protected override bool Initialize ()
+		public override void DeallocateFlow (Port port)
 		{
 			throw new NotImplementedException ();
 		}
-
-		protected override void Run ()
+		public override void Send (Port port, byte[] data)
 		{
 			throw new NotImplementedException ();
 		}
-
-		protected override void Finalize ()
+		public override byte[] Receive (Port port)
 		{
 			throw new NotImplementedException ();
 		}
-
+		public override void RegisterApplication (ApplicationNamingInfo appInfo, RequestHandler reqHandler)
+		{
+			throw new NotImplementedException ();
+		}
+		public override void DeregisterApplication (ApplicationNamingInfo appInfo)
+		{
+			throw new NotImplementedException ();
+		}
 		#endregion
 	}
 }

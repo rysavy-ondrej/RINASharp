@@ -63,8 +63,8 @@ namespace System.Net.Rina
 	/// </summary>
 	public class ResourceInformationManager
 	{
-		NameServiceAE _nameService;
-		public ResourceInformationManager(NameServiceAE nameService)
+		NameService _nameService;
+		public ResourceInformationManager(NameService nameService)
 		{
 			this._nameService = nameService;
 		}
@@ -80,9 +80,9 @@ namespace System.Net.Rina
 		public Object GetValue(ResourceClass resourceClass, string keyName, string valueName, Object defaultValue)
 		{
 			// If name resolution is required, call NameService.
-			if (resourceClass = ResourceClass.ApplicationNames) {
+			if (resourceClass == ResourceClass.ApplicationNames) {
 				// this is to be resolved by NS
-				var result = _nameService.GetApplicationAddresses (valueName);
+				var result = _nameService.GetApplicationAddresses (keyName, valueName);
 				if (result != null && result.Length > 0)
 					return result [0];
 				else

@@ -1,10 +1,10 @@
 ﻿//
-//  DataTransferAE.cs
+//  WinIpcShimDif.cs
 //
 //  Author:
 //       Ondrej Rysavy <rysavy@fit.vutbr.cz>
 //
-//  Copyright (c) 2014 PRISTINE
+//  Copyright (c) 2014 PRISTINE Consortium (http://ict-pristine.eu)
 //
 //  This program is free software; you can redistribute it and/or modify
 //  it under the terms of the GNU General Public License as published by
@@ -25,60 +25,42 @@ using System;
 namespace System.Net.Rina
 {
 	/// <summary>
-	/// This AE should implement sending and receiving data within this DIF. It serves all FlowInstance
-	/// checking their buffers for available data. 
+	/// This is implementation of ShimDif that employs Windows IPC mechanim.
 	/// </summary>
-	public class DataTransferService : ApplicationEntity
+	public class WinIpcShimDif : IpcContext
 	{
-		public FlowManager FlowManager { get; private set; }
-		public DataTransferService (FlowManager flowManager) : base("DataTransfer", "1", "DataTransferProtocol", "1")
+		public WinIpcShimDif ()
 		{
-			this.FlowManager = flowManager;
 		}
 
-		#region implemented abstract members of ApplicationEntity
+		#region IpcContext implementation
 
-		protected override bool Initialize ()
+		public override Port AllocateFlow (FlowInformation flow)
 		{
 			throw new NotImplementedException ();
 		}
 
-
-		protected override void Run ()
-		{
-			while (true) {
-
-			}
-		}
-
-		protected override void Finalize ()
+		public override void DeallocateFlow (Port port)
 		{
 			throw new NotImplementedException ();
 		}
 
-		#endregion
-	}
-
-
-	public class DataTransferControlService : ApplicationEntity
-	{
-		public DataTransferControlService () : base("DataTransfer", "1", "DataTransferControlProtocol", "1")
-		{
-		}
-
-		#region implemented abstract members of ApplicationEntity
-
-		protected override bool Initialize ()
+		public override void Send (Port port, byte[] data)
 		{
 			throw new NotImplementedException ();
 		}
 
-		protected override void Run ()
+		public override byte[] Receive (Port port)
 		{
 			throw new NotImplementedException ();
 		}
 
-		protected override void Finalize ()
+		public override void RegisterApplication (ApplicationNamingInfo appInfo, RequestHandler reqHandler)
+		{
+			throw new NotImplementedException ();
+		}
+
+		public override void DeregisterApplication (ApplicationNamingInfo appInfo)
 		{
 			throw new NotImplementedException ();
 		}

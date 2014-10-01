@@ -21,6 +21,7 @@
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 //
 using System;
+using System.Linq;
 using System.Collections.Generic;
 
 namespace System.Net.Rina
@@ -35,6 +36,23 @@ namespace System.Net.Rina
 		public FlowManager ()
 		{
 		}
+
+		public void AddFlowInstance (FlowInstance flowInstance)
+		{
+			this._flows.Add (flowInstance);
+		}
+
+		/// <summary>
+		/// Selects the flows by evaluating the specified selector function.
+		/// </summary>
+		/// <returns>The flows.</returns>
+		/// <param name="selector">Selector.</param>
+		FlowInstance[] SelectFlows(Func<FlowInstance, bool> selector)
+		{
+			var flows = _flows.Where (selector);
+			return flows.ToArray ();
+		}
+
 	}
 }
 

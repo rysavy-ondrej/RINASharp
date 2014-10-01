@@ -1,10 +1,10 @@
 ﻿//
-//  Flow.cs
+//  IpcPolicies.cs
 //
 //  Author:
 //       Ondrej Rysavy <rysavy@fit.vutbr.cz>
 //
-//  Copyright (c) 2014 PRISTINE
+//  Copyright (c) 2014 PRISTINE Consortium (http://ict-pristine.eu)
 //
 //  This program is free software; you can redistribute it and/or modify
 //  it under the terms of the GNU General Public License as published by
@@ -24,18 +24,10 @@ using System;
 
 namespace System.Net.Rina
 {
-	/// <summary>
-	/// Flow object describes a single communication session between two applications.
-	/// </summary>
-	public class Flow
+	public class IpcPolicies
 	{
-		public ApplicationNamingInfo SourceApplication { get; private set; }
-		public ApplicationNamingInfo DestinationApplication { get; private set; }
-
-		public Flow (ApplicationNamingInfo source, ApplicationNamingInfo destin)
+		public IpcPolicies ()
 		{
-			this.SourceApplication = source;
-			this.DestinationApplication = destin;
 		}
 	}
 }

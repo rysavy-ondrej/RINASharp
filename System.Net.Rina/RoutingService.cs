@@ -24,9 +24,12 @@ using System;
 
 namespace System.Net.Rina
 {
-	public class RoutingService
+	/// <summary>
+	/// This is base class for all routing services. 
+	/// </summary>
+	public abstract class RoutingService : ApplicationEntity
 	{
-		public RoutingService ()
+		public RoutingService (string applicationEntity, string applicationEntityInstance) : base("ManagementService","1", applicationEntity, applicationEntityInstance)
 		{
 		}
 	}

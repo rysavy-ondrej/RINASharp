@@ -29,16 +29,31 @@ namespace System.Net.Rina
 
 	}
 	/// <summary>
-	/// Port.
+	/// Represents a port used to identify communication within DIF.
 	/// </summary>
 	public class Port
 	{
-		public Port (PortInformation portInformation)
+		public IpcContext Ipc { get; private set; }
+		public UInt64 Id { get; private set; }
+		public PortInformation PortInformation { get; private set; }
+
+		/// <summary>
+		/// Gets a value indicating whether this <see cref="System.Net.Rina.Port"/> is connected.
+		/// </summary>
+		/// <value><c>true</c> if connected; otherwise, <c>false</c>.</value>
+		public bool Connected 
+		{  
+			get {
+				return this.Ipc.GetFlowState (this) == FlowState.Open;
+			}		
+		}
+
+		public Port (IpcContext ipc, UInt64 id, PortInformation portInformation)
 		{
+			this.Ipc = ipc;
+			this.Id = id;
+			this.PortInformation = portInformation;
 		}
 	}
-
-
-
 }
 

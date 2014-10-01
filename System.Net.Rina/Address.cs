@@ -70,7 +70,7 @@ namespace System.Net.Rina
 		/// <param name="address">Address.</param>
 		public Address (IPAddress address)
 		{
-			this._family = address.AddressFamily;
+			this._family = (AddressFamily)address.AddressFamily;
 			this._buffer = address.GetAddressBytes ();
 		}
 		/// <summary>

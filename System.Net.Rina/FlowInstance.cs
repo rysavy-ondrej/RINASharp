@@ -21,26 +21,64 @@
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 //
 using System;
-
+using System.Threading.Tasks;
+using System.Threading.Tasks.Dataflow;
 namespace System.Net.Rina
 {
+
+	public enum FlowState { Closed, Open }
+
+	/// <summary>
+	/// Represents a sinle data block to be send or receive. DataBlock consists of
+	/// data and meta information. 
+	/// </summary>
+	public class DataBlock
+	{
+		public byte[] Data;
+		/// <summary>
+		/// The flush flag. If this flag is set then data should be send immediatelly 
+		/// and not wait for more data.
+		/// </summary>
+		public bool Flush;
+	}
+
 	/// <summary>
 	/// This represents a structure in RINA that keeps information about a single flow. 
 	/// </summary>
 	public class FlowInstance
 	{
-		byte [] _readBuffer;
-		byte [] _writeBuffer;
-		Flow _flowInfo;
-
-		IIpc _underlayingIpc; 
-		Port _localPort;
-		int flowId;
-
-		public FlowInstance (Flow flowInfo)
-		{
-			this._flowInfo = flowInfo;
+		public FlowInformation Info { get; private set; }
+		/// <summary>
+		/// Port id allocated by Ipc for the current flow instance.
+		/// </summary>
+		/// <value>The source port identifier.</value>
+		public UInt64 SourcePortId 
+		{ 
+			get { return this.UpflowPort.Id; }
 		}
+
+
+		public Port UpflowPort { get; private set; }
+		public Port DownflowPort { get; private set; }
+		public int FlowId { get; private set;}
+
+		public ConnectionId[] ConnectionsIds { get; set; }
+		public ConnectionId CurrentConnection { get; set; }
+
+		public Task UpflowTask { get; private set; }
+		public Task DownflowTask { get; private set; }
+
+		internal FlowInstance (FlowInformation flowInfo, int flowId, Port upflowPort, Port downflowPort, Task upflowTask, Task downflowTask)
+		{
+			this.Info = flowInfo;
+			this.FlowId = flowId;
+			this.UpflowPort = upflowPort;
+			this.DownflowPort = downflowPort;
+			this.UpflowTask = upflowTask;
+			this.DownflowTask = downflowTask;
+		}
+
 	}
+
 }
 

@@ -1,5 +1,5 @@
 ﻿//
-//  NameService.cs
+//  Location.cs
 //
 //  Author:
 //       Ondrej Rysavy <rysavy@fit.vutbr.cz>
@@ -21,23 +21,25 @@
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 //
 using System;
-using System.Threading.Tasks;
+
 namespace System.Net.Rina
 {
-
 	/// <summary>
-	/// This process maintains identifiers within the current DIF.
+	/// Represents end point in Ipc communication. As an end point we need to know address of the 
+	/// node in the given ipc.
 	/// </summary>
-	public abstract class NameService : ApplicationEntity
+	public class IpcLocationVector
 	{
-		public NameService () : base("ManagementService","1","NameServiceProtocol","1")
+		public Address RemoteAddress { get; private set; }
+		public IpcContext LocalIpc { get; private set; }
+
+		public IpcLocationVector(Address address, IpcContext ipc)
 		{
+			this.RemoteAddress = address;
+			this.LocalIpc = ipc;
 		}
 
-		public abstract IpcLocationVector[] GetApplicationAddresses(string applicationProcessName, string applicationEntityName);
-
-
-		public abstract Task<IpcLocationVector[]> GetApplicationAddressesAsync(string applicationProcessName, string applicationEntityName);
+		public readonly static IpcLocationVector None = new IpcLocationVector(new Address(IPAddress.None), null);
 	}
 }
 

@@ -40,7 +40,7 @@ namespace System.Net.Rina
 	/// 
 	/// EntityInstance is PID of httpsvc.  
 	/// </remarks>
-	public struct ApplicationNamingInfo
+	public class ApplicationNamingInfo
 	{
 		/// <summary>
 		/// Gets the name of the process.

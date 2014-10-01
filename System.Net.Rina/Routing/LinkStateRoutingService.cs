@@ -1,5 +1,5 @@
 ﻿//
-//  QoS.cs
+//  RoutingService.cs
 //
 //  Author:
 //       Ondrej Rysavy <rysavy@fit.vutbr.cz>
@@ -25,10 +25,33 @@ using System;
 namespace System.Net.Rina
 {
 	/// <summary>
-	/// This represents QoS constraints that the application may impose on connection.
+	/// This is base class for all routing services. 
 	/// </summary>
-	public struct QoSConstraints
+	public class LinkStateRoutingService : RoutingService
 	{
+		public LinkStateRoutingService () : base("LinkStateRoutingProtocol", "1")
+		{
+
+		}
+
+		#region implemented abstract members of ApplicationEntity
+
+		protected override bool Initialize ()
+		{
+			throw new NotImplementedException ();
+		}
+
+		protected override void Run ()
+		{
+			throw new NotImplementedException ();
+		}
+
+		protected override void Finalize ()
+		{
+			throw new NotImplementedException ();
+		}
+
+		#endregion
 	}
 }
 

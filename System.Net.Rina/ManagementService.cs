@@ -24,9 +24,9 @@ using System;
 
 namespace System.Net.Rina
 {
-	public class ManagementService : ApplicationEntity
+	public abstract class ManagementService : ApplicationEntity
 	{
-		public ManagementService ()
+		public ManagementService () : base("ManagementService","1","ManagementServiceProtocol","1")
 		{
 		}
 	}

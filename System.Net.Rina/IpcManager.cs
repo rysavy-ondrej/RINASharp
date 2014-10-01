@@ -22,63 +22,135 @@
 //
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 namespace System.Net.Rina
 {
 	/// <summary>
 	/// This is IPC manager class that manages all IPC in the current domain. This is the central class in the 
 	/// architewcture as it controls all communication in the RINA DIF. It also includes Flow Allocator.
 	/// </summary>
-	public class IpcManager : IIpc
+	public class IpcManager : IpcContext
 	{
 		IpcConfiguration _config;
 		ResourceInformationManager _rim;
 		FlowManager _fam;
+		List<IpcContext> _difs;
+		UInt64 portId =0;
+		Address localAddress;
 
+	
+		private Dictionary<UInt64,BytesBlockBuffer> ReadBuffers = new Dictionary<ulong, BytesBlockBuffer>();
+	
 		/// <summary>
 		/// Represents
 		/// </summary>
-		Address Address { get; private set; }
+		public override Address LocalAddress { get { return this.localAddress; } }
 
 
-		public IpcManager(IpcConfiguration config, ResourceInformationManager rim, FlowManager fam)
+		public IpcManager(IpcConfiguration config, ResourceInformationManager rim, FlowManager fam, IpcContext[] underlayingIpcs)
 		{
 			this._config = config;
 			this._rim = rim;
 			this._fam = fam;
+			this._difs = new List<IpcContext> (underlayingIpcs);
+			this.localAddress = new Address (AddressFamily.Generic, new byte[0]);
+		}
+
+
+
+		#region IIpc implementation
+
+		public override FlowState GetFlowState (Port port)
+		{
+			return FlowState.Open;
+		}
+
+		public override Port AllocateFlow (FlowInformation flowInfo)
+		{
+			// find destination application using local RIB, it yields underlying DIF and port:
+			var locvector = (IpcLocationVector)(this._rim.GetValue(ResourceClass.ApplicationNames, 
+				flowInfo.DestinationApplication.ProcessName, 
+				flowInfo.DestinationApplication.EntityName, 
+				IpcLocationVector.None));
+
+			var upflowPort = new Port (this, this.portId++, new PortInformation ()); 
+
+			// this is flow info passed to underlaying dif in order to allocate flow there...
+			var underlayingFlowInfo = new FlowInformation () {
+				SourceApplication = flowInfo.SourceApplication,
+				DestinationApplication = flowInfo.DestinationApplication,
+				SourceAddress = locvector.LocalIpc.LocalAddress,
+				DestinationAddress = locvector.RemoteAddress,
+				CreateFlowRetriesLimit = 3,
+				HopCountLimit = 64,
+				Policies = default(IpcPolicies),
+				QosParameters = default(QosParameters)			
+			};
+			var downflowPort = locvector.LocalIpc.AllocateFlow (underlayingFlowInfo);					
+
+			// Processing pipeline for upflow direction:
+			//      o upflow_sinkPort -> upflowPort.Receive  	(Consumer)
+			//      |
+			//	   [ ] upflow_internalBuffer					(Buffering)
+			//		|
+			//     < > upflow_unpackData						(Transform)
+			//      |
+			//      o upflow_recPort <- downflowPort   			(Producer)
+
+			var upflow_sinkPort = new SinkPort ((byte[] bytes) => {
+				this.ReadBuffers[upflowPort.Id].Enqueue(bytes);
+			});
+
+			var upflow_internalBuffer = new System.Threading.Tasks.Dataflow.BufferBlock<byte[]> (); 
+
+			var upflow_unpackData = new System.Threading.Tasks.Dataflow.TransformBlock<byte[], byte[]> (bytes => {
+					DataTransferProtocol dtp = new DataTransferProtocol (bytes);
+					return dtp.GetPayload ();
+				});
+				
+			var upflow_recPort = new ReceivingPort (downflowPort); 
+
+			upflow_recPort.Produce (upflow_unpackData);
+
+			upflow_unpackData.LinkTo (upflow_internalBuffer, new System.Threading.Tasks.Dataflow.DataflowLinkOptions() { PropagateCompletion = true });
+
+			var upflow_task = upflow_sinkPort.ConsumeAsync (upflow_internalBuffer);
+
+			var flowInstance = new FlowInstance (flowInfo, 0, upflowPort, downflowPort, upflow_task, null);
+			this._fam.AddFlowInstance (flowInstance);
+			// return entry point...
+			return upflowPort;
+		}
+
+		public override void DeallocateFlow (Port port)
+		{
+			throw new NotImplementedException ();
 		}
 
 		/// <summary>
-		/// List of all active flows currently allocated in the current DIF.
+		/// Sends the specified data using given port. This operation is blocking.
 		/// </summary>
-		Dictionary<Flow, FlowInstance> activeFlows = new Dictionary<Flow, FlowInstance>();
-		Dictionary<Port, FlowInstance> portToFlow = new Dictionary<Port, FlowInstance>();
+		/// <param name="port">Port.</param>
+		/// <param name="data">Data.</param>
+		public override void Send (Port port, byte[] data)
+		{
+			throw new NotImplementedException ();
+		}
 
-		#region IIpc implementation
-		public Port AllocateFlow (Flow flow)
+					
+		public override byte[] Receive (Port port)
 		{
-			// find destination application using RIB:
-			this._rim.GetValue ("ApplicationProcessNames", flow.DestinationApplication.ProcessName, null);
-			throw new NotImplementedException ();
+			var portBuffer = this.ReadBuffers [port.Id];
+			byte[] bytes = null;
+			return portBuffer.Dequeue ();
 		}
-		public void DeallocateFlow (Port port)
-		{
-			throw new NotImplementedException ();
-		}
-		public void Send (Port port, byte[] data)
-		{
-			throw new NotImplementedException ();
-		}
-		public byte[] Receive (Port port)
-		{
-			throw new NotImplementedException ();
-		}
-		public void RegisterApplication (ApplicationNamingInfo appInfo, RequestHandler reqHandler)
-		{
 
-			this._rim.SetValue (ResourceClass.ApplicationNames, appInfo.ProcessName, appInfo.EntityName, this.Address);
-
+		public override void RegisterApplication (ApplicationNamingInfo appInfo, RequestHandler reqHandler)
+		{
+			this._rim.SetValue (ResourceClass.ApplicationNames, appInfo.ProcessName, appInfo.EntityName, this.LocalAddress);
 		}
-		public void DeregisterApplication (ApplicationNamingInfo appInfo)
+
+		public override void DeregisterApplication (ApplicationNamingInfo appInfo)
 		{
 			throw new NotImplementedException ();
 		}

@@ -1,5 +1,5 @@
 ﻿//
-//  NameService.cs
+//  QoS.cs
 //
 //  Author:
 //       Ondrej Rysavy <rysavy@fit.vutbr.cz>
@@ -21,23 +21,14 @@
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 //
 using System;
-using System.Threading.Tasks;
+
 namespace System.Net.Rina
 {
-
 	/// <summary>
-	/// This process maintains identifiers within the current DIF.
+	/// This represents QoS constraints that the application may impose on connection.
 	/// </summary>
-	public abstract class NameService : ApplicationEntity
+	public struct QosParameters
 	{
-		public NameService () : base("ManagementService","1","NameServiceProtocol","1")
-		{
-		}
-
-		public abstract IpcLocationVector[] GetApplicationAddresses(string applicationProcessName, string applicationEntityName);
-
-
-		public abstract Task<IpcLocationVector[]> GetApplicationAddressesAsync(string applicationProcessName, string applicationEntityName);
 	}
 }
 
