@@ -1,5 +1,5 @@
 ﻿//
-//  ManagementAE.cs
+//  DataTransferAE.cs
 //
 //  Author:
 //       Ondrej Rysavy <rysavy@fit.vutbr.cz>
@@ -22,13 +22,26 @@
 //
 using System;
 
-namespace System.Net.Rina
+namespace System.Net.Rina.Transport
 {
-	public abstract class ManagementService : ApplicationEntity
-	{
-		public ManagementService () : base("ManagementService","1","ManagementServiceProtocol","1")
-		{
-		}
-	}
-}
 
+    public class DataTransferControlService : ApplicationEntity
+    {
+        public DataTransferControlService() : base("DataTransfer", "1", "DataTransferControlProtocol", "1")
+        {
+        }
+
+        #region implemented abstract members of ApplicationEntity
+
+        protected override bool Initialize()
+        {
+            throw new NotImplementedException();
+        }
+
+        protected override void Run()
+        {
+            throw new NotImplementedException();
+        }
+        #endregion
+    }
+}

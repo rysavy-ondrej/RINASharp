@@ -1,5 +1,5 @@
 ﻿//
-//  WinIpcShimDif.cs
+//  HttpShimDif.cs
 //
 //  Author:
 //       Ondrej Rysavy <rysavy@fit.vutbr.cz>
@@ -21,50 +21,46 @@
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 //
 using System;
-
-namespace System.Net.Rina
+using System.Net.Rina;
+namespace System.Net.Rina.Shims
 {
 	/// <summary>
-	/// This is implementation of ShimDif that employs Windows IPC mechanim.
+	/// This class implement a simple Http shim dif. This DIF uses HTTP protocol for transfering data 
+	/// and DNS system for naming. Routing is simply IP routing.
 	/// </summary>
-	public class WinIpcShimDif : IpcContext
-	{
-		public WinIpcShimDif ()
-		{
-		}
+	/// <remarks>
+	/// Each DIF implement IPCContext interface providing data transfer and addressing functions for upper DIFs. 
+	/// Then DIF should run management, routing, naming and data transfer AE.
+	/// </remarks>
+	[ShimIpc("Http")]
+    public class HttpIpcContext : IpcContext
+	{          
 
 		#region IpcContext implementation
-
 		public override Port AllocateFlow (FlowInformation flow)
 		{
 			throw new NotImplementedException ();
 		}
-
 		public override void DeallocateFlow (Port port)
 		{
 			throw new NotImplementedException ();
 		}
-
 		public override void Send (Port port, byte[] data)
 		{
 			throw new NotImplementedException ();
 		}
-
 		public override byte[] Receive (Port port)
 		{
 			throw new NotImplementedException ();
 		}
-
 		public override void RegisterApplication (ApplicationNamingInfo appInfo, RequestHandler reqHandler)
 		{
 			throw new NotImplementedException ();
 		}
-
 		public override void DeregisterApplication (ApplicationNamingInfo appInfo)
 		{
 			throw new NotImplementedException ();
 		}
-
 		#endregion
 	}
 }

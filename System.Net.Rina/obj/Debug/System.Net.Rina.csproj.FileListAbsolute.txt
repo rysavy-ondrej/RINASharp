@@ -1,0 +1,9 @@
+C:\Users\Ondrej\Documents\GitHub\RINASharp\System.Net.Rina\obj\Debug\System.Net.Rina.csprojResolveAssemblyReference.cache
+C:\Users\Ondrej\Documents\GitHub\RINASharp\System.Net.Rina\bin\Debug\System.Net.Rina.dll
+C:\Users\Ondrej\Documents\GitHub\RINASharp\System.Net.Rina\bin\Debug\System.Net.Rina.pdb
+C:\Users\Ondrej\Documents\GitHub\RINASharp\System.Net.Rina\bin\Debug\NLog.dll
+C:\Users\Ondrej\Documents\GitHub\RINASharp\System.Net.Rina\bin\Debug\System.Threading.Tasks.Dataflow.dll
+C:\Users\Ondrej\Documents\GitHub\RINASharp\System.Net.Rina\bin\Debug\NLog.xml
+C:\Users\Ondrej\Documents\GitHub\RINASharp\System.Net.Rina\bin\Debug\System.Threading.Tasks.Dataflow.xml
+C:\Users\Ondrej\Documents\GitHub\RINASharp\System.Net.Rina\obj\Debug\System.Net.Rina.dll
+C:\Users\Ondrej\Documents\GitHub\RINASharp\System.Net.Rina\obj\Debug\System.Net.Rina.pdb

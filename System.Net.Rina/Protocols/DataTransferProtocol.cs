@@ -22,6 +22,8 @@
 //
 using System;
 using System.Runtime.Serialization;
+using System.Runtime.Serialization.Formatters.Binary;
+
 namespace System.Net.Rina
 {
 	[Serializable]
@@ -113,12 +115,20 @@ namespace System.Net.Rina
 			Buffer.BlockCopy (bytes, 15, this.payload, 0, this.payload.Length);
 		}
 
-		public byte[] GetBytes()
-		{
-			byte[] buffer = new byte[15 + this.payload.Length];
 
-			return buffer;
+        public static BinaryFormatter binaryFormatter = new BinaryFormatter(); 
+		public byte[] Serialize()
+		{
+            var ms = new IO.MemoryStream();
+            binaryFormatter.Serialize(ms, this);
+            return ms.GetBuffer();
 		}
+
+        public static DataTransferProtocol Deserialize(byte[] bytes)
+        {
+            var ms = new IO.MemoryStream(bytes);
+            return (DataTransferProtocol)binaryFormatter.Deserialize(ms);
+        }
 
 		#region ISerializable implementation
 		public void GetObjectData (SerializationInfo info, StreamingContext context)

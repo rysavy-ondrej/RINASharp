@@ -1,5 +1,5 @@
 ﻿//
-//  RoutingService.cs
+//  ManagementAE.cs
 //
 //  Author:
 //       Ondrej Rysavy <rysavy@fit.vutbr.cz>
@@ -22,14 +22,11 @@
 //
 using System;
 
-namespace System.Net.Rina
+namespace System.Net.Rina.Management
 {
-	/// <summary>
-	/// This is base class for all routing services. 
-	/// </summary>
-	public abstract class RoutingService : ApplicationEntity
+	public abstract class ManagementService : ApplicationEntity
 	{
-		public RoutingService (string applicationEntity, string applicationEntityInstance) : base("ManagementService","1", applicationEntity, applicationEntityInstance)
+		public ManagementService () : base("ManagementService","1","ManagementServiceProtocol","1")
 		{
 		}
 	}

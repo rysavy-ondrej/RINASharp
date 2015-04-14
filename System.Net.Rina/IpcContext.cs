@@ -1,5 +1,5 @@
 ﻿//
-//  IPC.cs
+//  IpcContext.cs
 //
 //  Author:
 //       Ondrej Rysavy <rysavy@fit.vutbr.cz>
@@ -24,17 +24,36 @@ using System;
 using System.Threading.Tasks;
 namespace System.Net.Rina
 {
-	/// <summary>
-	/// This delegate represent a method that is called for each new request represented by the passed flow object.
-	/// </summary>
-	public delegate void RequestHandler(FlowInstance flow);
+    /// <summary>
+    /// The result of connection request.
+    /// </summary>
+    public enum ConnectionRequestResult { Accept, Reject }
 
+    /// <summary>
+    /// This delegate represent a method that is called for each new request.Application request handler
+    /// provides flow information that can be used by the application to decide whether to accept or deny the 
+    /// request.
+    /// </summary>
+    /// <param name="context">The IpcContext object which manages the communication.</param>
+    /// <param name="flowInformation">The flow information describing the new request.</param>
+    /// <param name="acceptFlowHandler">A delegate that will be called in case of Accept response to fed the application with the information about the connection parameters.</param>
+    /// <returns>The connection request result. It can be either Accept or Reject.</returns>
+    public delegate ConnectionRequestResult ConnectionRequestHandler(IpcContext context, FlowInformation flowInformation, out AcceptFlowHandler acceptFlowHandler);
+
+    /// <summary>
+    /// This delegate is used to inform application that accepted a new request about the created flow. In particulat, application 
+    /// to serve the new request has to know port used for further communication.
+    /// </summary>
+    /// <param name="context">The IpcContext object which manages the communication.</param>
+    /// <param name="flowInformation">The flow information describing communicaton parties.</param>
+    /// <param name="port">The port object used to communication with other end point.</param>
+    public delegate void AcceptFlowHandler(IpcContext context, FlowInformation flowInformation, Port port);
 	/// <summary>
 	/// This interface represents basic IPC API.
 	/// </summary>
-	public abstract class IpcContext {
+	public interface IpcContext {
 
-		public abstract Address LocalAddress { get; }
+		Address LocalAddress { get; }
 
 
 		/// <summary>
@@ -42,42 +61,61 @@ namespace System.Net.Rina
 		/// </summary>
 		/// <returns>The flow.</returns>
 		/// <param name="flow">Flow information object.</param>
-		public abstract Port AllocateFlow (FlowInformation flow);
+		Port AllocateFlow (FlowInformation flow);
 		/// <summary>
 		/// Deallocates the flow associated with the provided port.
 		/// </summary>
 		/// <param name="port">Port descriptor.</param>
-		public abstract void DeallocateFlow (Port port);
+		void DeallocateFlow (Port port);
 
 
-		public abstract FlowState GetFlowState (Port port);
+		FlowState GetFlowState (Port port);
 
-		
-		/// <summary>
-		/// Sends the specified data using given port.
-		/// </summary>
-		/// <param name="port">Port.</param>
-		/// <param name="data">Data.</param>
-		public abstract void Send(Port port, byte[] data);
+        /// <summary>
+        /// Send synchronously sends data to the remote host using specified Port and returns the number of bytes successfully sent. 
+        /// </summary>
+        /// <param name="port">The Port that represents the destination location for the data. .</param>
+        /// <param name="buffer">An array of type Byte that contains the data to be sent. </param>
+        /// <param name="offset">The position in the data buffer at which to begin sending data. </param>
+        /// <param name="size">The number of bytes to send. </param>
+        /// <returns>The number of bytes sent.</returns>
+        int Send(Port port, byte[] buffer, int offset, int size);
 
-		public async Task SendAsync(Port port, byte[] data)
-		{
-			var t = new Task(() => { this.Send (port, data); });
-			await t;
-		}
-		/// <summary>
-		/// Reads the available data from the specified port.
-		/// </summary>
-		/// <param name="port">Port.</param>
-		public abstract byte[] Receive(Port port);
+        /// <summary>
+        /// Gets a value that specifies the size of the receive buffer of the Port.
+        /// </summary>
+        /// <returns>An Int32 that contains the size, in bytes, of the receive buffer. The default is 8192.</returns>
+        int GetReceiveBufferSize(Port port);
 
-		public async Task<byte[]> ReceiveAsync(Port port)
-		{
-			var t = new Task<byte[]> (() => {
-				return this.Receive (port);
-			});
-			return await t;
-		}
+        /// <summary>
+        /// Sets a value that specifies the size of the receive buffer of the Port.
+        /// </summary>
+        /// <param name="port">A port object for which the size is to be set.</param>
+        /// <param name="size">An Int32 that contains the size, in bytes, of the receive buffer. The default is 8192.</param>
+        void SetReceiveBufferSize(Port port, int size);
+
+        /// <summary>
+        /// Gets a value that specifies the size of the send buffer of the Port.
+        /// </summary>
+        /// <returns>An Int32 that contains the size, in bytes, of the send buffer. The default is 8192.</returns>
+        int GetSendBufferSize(Port port);
+
+        /// <summary>
+        /// Sets a value that specifies the size of the send buffer of the Port.
+        /// </summary>
+        /// <param name="port">A port object for which the size is to be set.</param>
+        /// <param name="size">An Int32 that contains the size, in bytes, of the send buffer. The default is 8192.</param>
+        void SetSendBufferSize(Port port, int size);
+
+        /// <summary>
+        /// Reads the available data from the specified port.
+        /// </summary>
+        /// <param name="port">Port object used for receiving data from.</param>
+        /// <param name="buffer">An array of type Byte that is the storage location for received data. </param>
+        /// <param name="offset">The position in the buffer parameter to store the received data. </param>
+        /// <param name="size">The number of bytes to receive. </param>
+        /// <returns>The number of bytes received.</returns>
+        int Receive(Port port, byte[] buffer, int offset, int size);
 
 		/// <summary>
 		/// Registers the application name in the current IPC. An application serves new flows that are passed
@@ -85,12 +123,12 @@ namespace System.Net.Rina
 		/// </summary>
 		/// <param name="appInfo">App info.</param>
 		/// <param name="reqHandler">Req handler.</param>
-		public abstract void RegisterApplication (ApplicationNamingInfo appInfo, RequestHandler reqHandler);
+		void RegisterApplication (ApplicationNamingInfo appInfo, ConnectionRequestHandler reqHandler);
 		/// <summary>
 		/// Deregisters the application.
 		/// </summary>
 		/// <param name="appInfo">App info.</param>
-		public abstract void DeregisterApplication (ApplicationNamingInfo appInfo);
+		void DeregisterApplication (ApplicationNamingInfo appInfo);
 	}
 
 }

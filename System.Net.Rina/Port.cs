@@ -24,10 +24,6 @@ using System;
 
 namespace System.Net.Rina
 {
-	public struct PortInformation
-	{
-
-	}
 	/// <summary>
 	/// Represents a port used to identify communication within DIF.
 	/// </summary>
@@ -35,24 +31,25 @@ namespace System.Net.Rina
 	{
 		public IpcContext Ipc { get; private set; }
 		public UInt64 Id { get; private set; }
-		public PortInformation PortInformation { get; private set; }
-
-		/// <summary>
-		/// Gets a value indicating whether this <see cref="System.Net.Rina.Port"/> is connected.
-		/// </summary>
-		/// <value><c>true</c> if connected; otherwise, <c>false</c>.</value>
-		public bool Connected 
+        /// <summary>
+        /// Gets or sets a value that indicates whether the Port is in blocking mode.
+        /// </summary>
+        public bool Blocking { get; set; }
+        /// <summary>
+        /// Gets a value indicating whether this <see cref="System.Net.Rina.Port"/> is connected.
+        /// </summary>
+        /// <value><c>true</c> if connected; otherwise, <c>false</c>.</value>
+        public bool Connected 
 		{  
 			get {
 				return this.Ipc.GetFlowState (this) == FlowState.Open;
 			}		
 		}
 
-		public Port (IpcContext ipc, UInt64 id, PortInformation portInformation)
+		internal Port (IpcContext ipc, UInt64 id)
 		{
 			this.Ipc = ipc;
 			this.Id = id;
-			this.PortInformation = portInformation;
 		}
 	}
 }

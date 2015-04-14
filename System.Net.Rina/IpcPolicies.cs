@@ -21,14 +21,74 @@
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 //
 using System;
-
+using System.Collections.Generic;
 namespace System.Net.Rina
 {
+
+    public enum IpcPolicyType
+    {
+        SduCompressionPolicy,
+        SduEncryptionPolicy, 
+        SduIntegrityPolicy, 
+        SduLifelimitPolicy
+    }
+
+    public abstract class IpcPolicy : IReadOnlyDictionary<string,object>
+    {
+        protected Dictionary<string, object> parameters = new Dictionary<string, object>();
+        public abstract IpcPolicyType PolicyType { get; }
+
+        public bool ContainsKey(string key)
+        {
+            return this.parameters.ContainsKey(key);
+        }
+
+        public IEnumerable<string> Keys
+        {
+            get { return this.parameters.Keys; }
+        }
+
+        public bool TryGetValue(string key, out object value)
+        {
+            return this.parameters.TryGetValue(key, out value);
+        }
+
+        public IEnumerable<object> Values
+        {
+            get { return this.parameters.Values; }
+        }
+
+        public object this[string key]
+        {
+            get { return this.parameters[key]; }
+        }
+
+        public int Count
+        {
+            get { return this.parameters.Count; }
+        }
+
+        public IEnumerator<KeyValuePair<string, object>> GetEnumerator()
+        {
+            return this.parameters.GetEnumerator();
+        }
+
+        Collections.IEnumerator Collections.IEnumerable.GetEnumerator()
+        {
+            return this.parameters.GetEnumerator();
+        }
+    }
+
+
+    /// <summary>
+    /// This class represents a collection of policies for Ipc mechamisms.
+    /// </summary>
 	public class IpcPolicies
 	{
 		public IpcPolicies ()
 		{
 		}
+
 	}
 }
 

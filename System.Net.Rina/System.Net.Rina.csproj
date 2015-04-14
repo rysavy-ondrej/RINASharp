@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
@@ -14,7 +14,7 @@
     <DebugType>full</DebugType>
     <Optimize>false</Optimize>
     <OutputPath>bin\Debug</OutputPath>
-    <DefineConstants>DEBUG;</DefineConstants>
+    <DefineConstants>TRACE;DEBUG;</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
     <ConsolePause>false</ConsolePause>
@@ -32,25 +32,32 @@
     <Reference Include="NLog">
       <HintPath>..\packages\NLog.3.1.0.0\lib\net45\NLog.dll</HintPath>
     </Reference>
+    <Reference Include="System.Runtime.Remoting" />
+    <Reference Include="System.Runtime.Serialization" />
+    <Reference Include="System.ServiceModel" />
     <Reference Include="System.Threading.Tasks.Dataflow">
       <HintPath>..\packages\Microsoft.Tpl.Dataflow.4.5.23\lib\portable-net45+win8+wpa81\System.Threading.Tasks.Dataflow.dll</HintPath>
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Helpers\IpcStream.cs" />
+    <Compile Include="Internals\FifoStream.cs" />
+    <Compile Include="Transport\DataTransferControlService.cs" />
+    <Compile Include="Naming\StaticNameService.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Port.cs" />
     <Compile Include="ApplicationEntity.cs" />
-    <Compile Include="IpcManager.cs" />
+    <Compile Include="IpcObject.cs" />
     <Compile Include="ApplicationNamingInfo.cs" />
     <Compile Include="IpcConfiguration.cs" />
     <Compile Include="FlowInstance.cs" />
     <Compile Include="ResourceManager.cs" />
     <Compile Include="FlowManager.cs" />
     <Compile Include="Address.cs" />
-    <Compile Include="NameService.cs" />
-    <Compile Include="ManagementService.cs" />
-    <Compile Include="DataTransferService.cs" />
-    <Compile Include="RoutingService.cs" />
+    <Compile Include="Naming\NameService.cs" />
+    <Compile Include="Management\ManagementService.cs" />
+    <Compile Include="Transport\DataTransferService.cs" />
+    <Compile Include="Routing\RoutingService.cs" />
     <Compile Include="Routing\LinkStateRoutingService.cs" />
     <Compile Include="Protocols\DataTransferProtocol.cs" />
     <Compile Include="Internals\IpcInternalDataflowModel.cs" />
@@ -59,18 +66,22 @@
     <Compile Include="QoSParameters.cs" />
     <Compile Include="IpcPolicies.cs" />
     <Compile Include="IpcLocationVector.cs" />
+    <Compile Include="SduProtection.cs" />
+    <Compile Include="Security\Crc32.cs" />
+    <Compile Include="Security\SduCompression.cs" />
+    <Compile Include="Security\SduEncryption.cs" />
+    <Compile Include="Security\SduIntegrity.cs" />
+    <Compile Include="Security\SduTimelimit.cs" />
+    <Compile Include="Security\SecurityContext.cs" />
+    <Compile Include="Security\SecurityContextManager.cs" />
+    <Compile Include="Shims\ShimIpcAttribute.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.targets" />
-  <ItemGroup>
-    <Folder Include="Routing\" />
-    <Folder Include="Naming\" />
-    <Folder Include="Shims\" />
-    <Folder Include="Protocols\" />
-    <Folder Include="Internals\" />
-  </ItemGroup>
+  <ItemGroup />
   <ItemGroup>
     <None Include="packages.config" />
-    <None Include="Shims\HttpShimDif.cs" />
-    <None Include="Shims\WinIpcShimDif.cs" />
+    <None Include="RinaCore.cd" />
+    <None Include="Shims\HttpIpcObject.cs" />
+    <Compile Include="Shims\WinIpcObject.cs" />
   </ItemGroup>
 </Project>

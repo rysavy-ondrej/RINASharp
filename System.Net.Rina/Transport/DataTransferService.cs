@@ -20,15 +20,13 @@
 //  along with this program; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 //
-using System;
-
-namespace System.Net.Rina
+namespace System.Net.Rina.Transport
 {
-	/// <summary>
-	/// This AE should implement sending and receiving data within this DIF. It serves all FlowInstance
-	/// checking their buffers for available data. 
-	/// </summary>
-	public class DataTransferService : ApplicationEntity
+    /// <summary>
+    /// This AE should implement sending and receiving data within this DIF. It serves all FlowInstance
+    /// checking their buffers for available data. 
+    /// </summary>
+    public class DataTransferService : ApplicationEntity
 	{
 		public FlowManager FlowManager { get; private set; }
 		public DataTransferService (FlowManager flowManager) : base("DataTransfer", "1", "DataTransferProtocol", "1")
@@ -43,44 +41,14 @@ namespace System.Net.Rina
 			throw new NotImplementedException ();
 		}
 
-
+        /// <summary>
+        /// Processes all flows in the current IPC object. Processing means to check if there are data to send and also try to read data from underlaying DIFs.
+        /// </summary>
 		protected override void Run ()
 		{
 			while (true) {
 
 			}
-		}
-
-		protected override void Finalize ()
-		{
-			throw new NotImplementedException ();
-		}
-
-		#endregion
-	}
-
-
-	public class DataTransferControlService : ApplicationEntity
-	{
-		public DataTransferControlService () : base("DataTransfer", "1", "DataTransferControlProtocol", "1")
-		{
-		}
-
-		#region implemented abstract members of ApplicationEntity
-
-		protected override bool Initialize ()
-		{
-			throw new NotImplementedException ();
-		}
-
-		protected override void Run ()
-		{
-			throw new NotImplementedException ();
-		}
-
-		protected override void Finalize ()
-		{
-			throw new NotImplementedException ();
 		}
 
 		#endregion

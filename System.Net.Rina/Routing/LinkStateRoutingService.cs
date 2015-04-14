@@ -22,7 +22,7 @@
 //
 using System;
 
-namespace System.Net.Rina
+namespace System.Net.Rina.Routing
 {
 	/// <summary>
 	/// This is base class for all routing services. 
@@ -42,11 +42,6 @@ namespace System.Net.Rina
 		}
 
 		protected override void Run ()
-		{
-			throw new NotImplementedException ();
-		}
-
-		protected override void Finalize ()
 		{
 			throw new NotImplementedException ();
 		}

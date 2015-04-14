@@ -1,5 +1,5 @@
 ﻿//
-//  NameService.cs
+//  RoutingService.cs
 //
 //  Author:
 //       Ondrej Rysavy <rysavy@fit.vutbr.cz>
@@ -21,23 +21,17 @@
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 //
 using System;
-using System.Threading.Tasks;
-namespace System.Net.Rina
+using System.Net.Rina;
+namespace System.Net.Rina.Routing
 {
-
 	/// <summary>
-	/// This process maintains identifiers within the current DIF.
+	/// This is base class for all routing services. 
 	/// </summary>
-	public abstract class NameService : ApplicationEntity
+	public abstract class RoutingService : ApplicationEntity
 	{
-		public NameService () : base("ManagementService","1","NameServiceProtocol","1")
+		public RoutingService (string applicationEntity, string applicationEntityInstance) : base("ManagementService","1", applicationEntity, applicationEntityInstance)
 		{
 		}
-
-		public abstract IpcLocationVector[] GetApplicationAddresses(string applicationProcessName, string applicationEntityName);
-
-
-		public abstract Task<IpcLocationVector[]> GetApplicationAddressesAsync(string applicationProcessName, string applicationEntityName);
 	}
 }
 

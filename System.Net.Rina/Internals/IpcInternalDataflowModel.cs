@@ -20,15 +20,15 @@
 //  along with this program; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 //
-using System;
-using System.Collections.Generic;
 using System.Threading.Tasks;
 using System.Threading.Tasks.Dataflow;
 
 namespace System.Net.Rina
 {
 
-
+    /// <summary>
+    /// This class represents a block buffer.
+    /// </summary>
 	public class BytesBlockBuffer 
 	{
 		private BufferBlock<byte[]> _bufferBlock = new BufferBlock<byte[]>();
@@ -49,7 +49,8 @@ namespace System.Net.Rina
 		/// <value>The count.</value>
 		public int Count { get { return this._bufferBlock.Count; } }
 	}
-	/// This represents a source port. It is just used as the source of data within the Ipc context.
+	/// <summary>
+    /// This represents a source port. It is just used as the source of data within the Ipc context.
 	/// New data are send by calling Send function.
 	/// </summary>
 	public class SourcePort : IDisposable
@@ -108,12 +109,12 @@ namespace System.Net.Rina
 		public void Produce(ITargetBlock<byte[]> target)
 		{
 			while (port.Connected) {
-				var buffer = port.Ipc.Receive (port);
+                var buffer = new byte[8192];
+				port.Ipc.Receive (port,buffer, 0, buffer.Length);
 				target.Post (buffer);
 			}
 		}
 	}
-
 
 	/// <summary>
 	/// This is consumer, it just calls Ipc send method of the associated Port.
@@ -131,7 +132,7 @@ namespace System.Net.Rina
 			while (await source.OutputAvailableAsync ()) {
 				byte[] data = source.Receive();
 				bytesProcessed += data.Length;
-				port.Ipc.Send (this.port, data);
+				port.Ipc.Send (this.port, data,0,data.Length);
 			}
 			return bytesProcessed;
 		}

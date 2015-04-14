@@ -26,33 +26,76 @@ using System.Collections.Generic;
 
 namespace System.Net.Rina
 {
-	/// <summary>
-	/// Flow manager represents a flow allocator in RINA architecture. It creates and destroys 
-	/// flow instances.
-	/// </summary>
-	public class FlowManager
-	{
-		List<FlowInstance> _flows = new List<FlowInstance>();
-		public FlowManager ()
+    /// <summary>
+    /// Flow manager represents a flow allocator in RINA architecture. It creates and destroys 
+    /// flow instances.
+    /// </summary>
+    public class FlowManager
+    {
+        /// <summary>
+        /// Maps flow ids to flows.
+        /// </summary>
+        Dictionary<ulong, FlowInstance> _flows = new Dictionary<ulong, FlowInstance>();
+
+        /// <summary>
+        /// Creates a new instance of flow manager.
+        /// </summary>
+        public FlowManager ()
 		{
 		}
 
-		public void AddFlowInstance (FlowInstance flowInstance)
+        ulong _lastFlowId = 0;
+		public FlowInstance AddFlow (FlowInformation flowInformation)
 		{
-			this._flows.Add (flowInstance);
+            lock(this._flows)
+            {
+                _lastFlowId++;
+                var flowInstance = new FlowInstance(flowInformation, _lastFlowId);
+                this._flows.Add(flowInstance.Id, flowInstance);
+
+                return flowInstance;
+            }
 		}
 
-		/// <summary>
-		/// Selects the flows by evaluating the specified selector function.
-		/// </summary>
-		/// <returns>The flows.</returns>
-		/// <param name="selector">Selector.</param>
-		FlowInstance[] SelectFlows(Func<FlowInstance, bool> selector)
-		{
-			var flows = _flows.Where (selector);
-			return flows.ToArray ();
-		}
+        /// <summary>
+        /// Removes a flow instance from the current flow manager with the given flowId if exists; otherwise it does nothing. 
+        /// </summary>
+        /// <param name="flowId">An identification of the FlowInstance object.</param>
+        public void DeleteFlow(ulong flowId)
+        {
+            lock(this._flows)
+            {
+                _flows.Remove(flowId);
+            }
+        }
 
+        /// <summary>
+        /// Gets flow of the given flow id.
+        /// </summary>
+        /// <param name="fid">An id of the flow to be retrieved.</param>
+        /// <returns>A flow instance object.</returns>
+        /// <exception cref="KeyNotFoundException">If flow with the given id does not exist.</exception>
+        public FlowInstance GetFlowInstance(ulong fid)
+        {   
+            lock (this._flows)
+            {
+                return this._flows[fid];
+            }
+        }
+
+        /// <summary>
+        /// Selects the flows by evaluating the specified selector function.
+        /// </summary>
+        /// <param name="selector">Selector function that specifies criteria for flowinstance object to be included in the result.</param>
+        /// <returns>An array of flow instances that matches specified criteria.</returns>
+        FlowInstance[] SelectFlows(Func<FlowInstance, bool> selector)
+		{
+            lock (this._flows)
+            {
+                var flows = _flows.Values.Where(selector);
+                return flows.ToArray();
+            }
+		}
 	}
 }
 
