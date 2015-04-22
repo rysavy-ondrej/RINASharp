@@ -174,6 +174,21 @@ namespace System.Net.Rina
         {
             throw new NotImplementedException();
         }
+
+        public PortInformationOptions GetPortInformation(Port port)
+        {
+            throw new NotImplementedException();
+        }
+
+        public void SetBlocking(Port port, bool value)
+        {
+            throw new NotImplementedException();
+        }
+
+        public int AvailableData(Port port)
+        {
+            throw new NotImplementedException();
+        }
     }
 }
 

@@ -5,11 +5,11 @@ using System.Runtime.InteropServices;
 // General Information about an assembly is controlled through the following 
 // set of attributes. Change these attribute values to modify the information
 // associated with an assembly.
-[assembly: AssemblyTitle("TimeServer")]
-[assembly: AssemblyDescription("")]
+[assembly: AssemblyTitle("TimeService")]
+[assembly: AssemblyDescription("This is SharpRina simple demo application.")]
 [assembly: AssemblyConfiguration("")]
-[assembly: AssemblyCompany("")]
-[assembly: AssemblyProduct("TimeServer")]
+[assembly: AssemblyCompany("Brno University of Technology")]
+[assembly: AssemblyProduct("SharpRina.TimeService")]
 [assembly: AssemblyCopyright("Copyright ©  2015")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]

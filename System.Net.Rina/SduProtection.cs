@@ -17,7 +17,6 @@ namespace System.Net.Rina.Security
 
     class SduProtection
     {
-
         /// <summary>
         /// Allocates a byte array that can accomodate all data of length specified in <paramref name="dataLength"/>and
         /// also metadata associated with SDU protection for specified <paramref name="flow"/>.

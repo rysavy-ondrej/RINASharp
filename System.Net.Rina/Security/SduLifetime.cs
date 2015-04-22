@@ -7,12 +7,12 @@ using System.Net.Rina;
 namespace System.Net.Rina.Security
 {
 
-    public enum LifelimitMethod { Null, Hopcount, Realtime }
-    public class SduLifelimitPolicy : IpcPolicy
+    public enum LifetimeMethod { Null, Hopcount, Realtime }
+    public class SduLifetimePolicy : IpcPolicy
     {
-        public LifelimitMethod Method { get { return (LifelimitMethod)this.parameters["Method"]; } }
+        public LifetimeMethod Method { get { return (LifetimeMethod)this.parameters["Method"]; } }
 
-        public SduLifelimitPolicy(string method)
+        public SduLifetimePolicy(string method)
         {
             this.parameters["Method"] = method;
         }
@@ -24,7 +24,7 @@ namespace System.Net.Rina.Security
     }
 
     
-    public abstract class SduLifelimitMethod
+    public abstract class SduLifetimeMethod
     {
         public abstract byte[] Apply(byte[] input);
         public abstract bool Expired(byte[] input);
@@ -32,9 +32,9 @@ namespace System.Net.Rina.Security
         public abstract IpcPolicy Policy { get; }
     }
 
-    class SduNullLifelimitMethod : SduLifelimitMethod
+    class SduNullLifetimeMethod : SduLifetimeMethod
     {
-        SduLifelimitPolicy _policy = new SduLifelimitPolicy(LifelimitMethod.Null.ToString());
+        SduLifetimePolicy _policy = new SduLifetimePolicy(LifetimeMethod.Null.ToString());
         public override byte[] Apply(byte[] input)
         {
             return null;
@@ -51,9 +51,9 @@ namespace System.Net.Rina.Security
         }
     }
 
-    class SduHopCountLifelimitMethod : SduLifelimitMethod
+    class SduHopCountLifetimeMethod : SduLifetimeMethod
     {
-        SduLifelimitPolicy _policy = new SduLifelimitPolicy(LifelimitMethod.Hopcount.ToString());
+        SduLifetimePolicy _policy = new SduLifetimePolicy(LifetimeMethod.Hopcount.ToString());
         public override byte[] Apply(byte[] input)
         {
             switch(input.Length)

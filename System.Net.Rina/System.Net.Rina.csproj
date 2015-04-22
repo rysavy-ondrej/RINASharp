@@ -40,8 +40,9 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="Helpers\IpcStream.cs" />
+    <Compile Include="Helpers\IpcChannelStream.cs" />
     <Compile Include="Internals\FifoStream.cs" />
+    <Compile Include="Internals\MultiKeyDictionary.cs" />
     <Compile Include="Transport\DataTransferControlService.cs" />
     <Compile Include="Naming\StaticNameService.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
@@ -71,7 +72,7 @@
     <Compile Include="Security\SduCompression.cs" />
     <Compile Include="Security\SduEncryption.cs" />
     <Compile Include="Security\SduIntegrity.cs" />
-    <Compile Include="Security\SduTimelimit.cs" />
+    <Compile Include="Security\SduLifetime.cs" />
     <Compile Include="Security\SecurityContext.cs" />
     <Compile Include="Security\SecurityContextManager.cs" />
     <Compile Include="Shims\ShimIpcAttribute.cs" />
@@ -82,6 +83,6 @@
     <None Include="packages.config" />
     <None Include="RinaCore.cd" />
     <None Include="Shims\HttpIpcObject.cs" />
-    <Compile Include="Shims\WinIpcObject.cs" />
+    <Compile Include="Shims\ServiceIpcObject.cs" />
   </ItemGroup>
 </Project>

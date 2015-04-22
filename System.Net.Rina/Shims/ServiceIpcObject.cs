@@ -20,19 +20,16 @@
 //  along with this program; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 //
-using System;
+using System.IO;
 using System.Collections.Generic;
 using System.ServiceModel;
-using System.ServiceModel.Channels;
-using System.Security.Permissions;
-using System.Net.Rina;
 using System.Threading;
 using System.Diagnostics;
 using System.Runtime.Serialization;
 namespace System.Net.Rina.Shims
 {
     /// <summary>
-    /// This class is used to hold propwerties of a new connection requested by the client side.
+    /// This class is used to hold properties of a new connection requested by the client side.
     /// Information in this class is used to identify originator of the request as well as to 
     /// find an application that should serve the request.
     /// </summary>
@@ -151,77 +148,78 @@ namespace System.Net.Rina.Shims
 
 
     /// <summary>
-    /// This is implementation of ShimDif that employs Windows IPC mechanism.
+    /// This is implementation of IpcProcess for ShimDif that employs WCF Service model.
     /// </summary>
-    /// <remarks>
-    /// The System.Runtime.Remoting.Channels.Ipc namespace defines a communication channel for remoting that uses the interprocess cmmunication (IPC) 
-    /// system of the Windows operating system. Because it does not use network communication, the IPC channel is much faster than the HTTP and TCP channels, but it can only be used for communication between application domains on the same physical computer.
-    /// See https://msdn.microsoft.com/en-us/library/system.runtime.remoting.channels.ipc.ipcchannel(v=vs.110).aspx for details on IpcChannel.
-    /// 
-    /// This IPC is a part of IPC DIF that provides reliable data delivery. It uses recievue buffers only as it is possible to 
-    /// use send and forgot method. 
-    /// </remarks>
-    [ShimIpc("WinIpc")]
-    public class WinIpcObject : IpcContext, IDisposable
+    [ShimIpc("WcfServiceIpc")]
+    public class WcfServiceIpcProcess : IpcContext, IDisposable
 	{
-        Object _flowManipulationLock = new Object();
-        Object _appManipulationLock = new Object();
-        ulong _lastPortId = 0;
-        Thread _worker;
-        FlowManager _flowManager = new FlowManager();
-        ServiceHost _serviceHost;
+        Object m_connectionEndpointsLock = new Object();
+        Object m_generalLock = new Object();
+        ulong m_lastAllocatedPortId = 0;
+        Thread m_IpcWorker;
+        ServiceHost m_serviceHost;
 
-        internal class RemoteSite
+        internal class ConnectionEndpoint
         {
-            internal RemoteSite(ICommunicationObject comObject, IRemoteObject remoteObject)
-            {
-                this.CommunicationObject = comObject;
-                this.RemoteObject = remoteObject;
-            }
-            internal ICommunicationObject CommunicationObject { get; private set; }
-            internal IRemoteObject RemoteObject { get; private set; }
-
-            internal void Close()
-            {
-                this.CommunicationObject.Close();
-            }
+            /// <summary>
+            /// Stores the local Port object.
+            /// </summary>
+            internal Port Port;
+            /// <summary>
+            /// Specifies whether the port is blocking or non-blocking.
+            /// </summary>
+            internal bool Blocking;
+            /// <summary>
+            /// Flow information that describes parameters of the current connection.
+            /// </summary>
+            internal FlowInformation FlowInformation;
+            /// <summary>
+            /// Connection Id is used to resolve to which connection data should be written as 
+            /// rmeote object is create as a singleton. Connection Id is set to PortId of the "server".
+            /// </summary>
+            internal ulong ConnectionId;
+            /// <summary>
+            /// Object used to connect to the remote object.
+            /// </summary>
+            internal ICommunicationObject CommunicationObject;
+            /// <summary>
+            /// Remote object that is used for sending and received data.
+            /// </summary>
+            internal IRemoteObject RemoteObject;
+            /// <summary>
+            /// Local receive buffer. All data that are supposed for this flow are stored in this buffer.
+            /// </summary>
+            internal FifoStream ReceiveBuffer;
         }
 
         /// <summary>
-        /// Maps Port Ids to Flow Ids.
+        /// This maps the port id to connection endpoint object that maintains all necessary information for a flow.
         /// </summary>
-        Dictionary<ulong, ulong> _portIdsToFlowIds = new Dictionary<ulong, ulong>();
-        /// <summary>
-        /// Maps Flow Ids to remote objects.
-        /// </summary>
-        Dictionary<ulong, RemoteSite> _flowIdsToRemoteObjects = new Dictionary<ulong, RemoteSite>();
-        /// <summary>
-        /// Maps remote port ids (aka connection ids) to flow ids. 
-        /// </summary>
-        Dictionary<ulong, ulong> _remotePortIdsToFlowIds = new Dictionary<ulong, ulong>();
+        MultiKeyDictionary<ulong, ulong, ConnectionEndpoint> m_ConnectionEndpoints = new MultiKeyDictionary<ulong, ulong, ConnectionEndpoint>();
+
         /// <summary>
         /// Collection all registered applications and their request handlers.
         /// </summary>
-        List<RegisteredApplication> _registeredApplications = new List<RegisteredApplication>();
+        List<RegisteredApplication> m_registeredApplications = new List<RegisteredApplication>();
         /// <summary>
         /// Maps flow ids to receive buffer objects.
         /// </summary>
-        Dictionary<ulong, Internals.FifoStream> _receiveBuffers = new Dictionary<ulong, Internals.FifoStream> ();
+        //Dictionary<ulong, FifoStream> _receiveBuffers = new Dictionary<ulong, FifoStream> ();
 
         public Address LocalAddress { get; private set; }
 
         /// <summary>
         /// Provides access to working thread. 
         /// </summary>
-        public Thread Worker {  get { return this._worker; } }
+        public Thread Worker {  get { return this.m_IpcWorker; } }
 
-        public static WinIpcObject Create(string localAddress)
+        public static WcfServiceIpcProcess Create(string localAddress)
         {
             try
             {
-                var ipc = new WinIpcObject(localAddress);
-                ipc._worker = new Thread(ipc.Run);
-                ipc._worker.Start();
+                var ipc = new WcfServiceIpcProcess(localAddress);
+                ipc.m_IpcWorker = new Thread(ipc.Run);
+                ipc.m_IpcWorker.Start();
                 return ipc;
             }
             catch(AddressAlreadyInUseException e)
@@ -229,14 +227,6 @@ namespace System.Net.Rina.Shims
                 var info = String.Format("Address already in use: {0}", e.Message);
                 Trace.WriteLine(info, "ERROR");
                 return null;
-            }
-        }
-
-        internal FlowInstance GetFlowByConnectionId(ulong connectionId)
-        {
-            lock(_flowManipulationLock)
-            {
-                return this._flowManager.GetFlowInstance(this._remotePortIdsToFlowIds[connectionId]);
             }
         }
 
@@ -250,7 +240,7 @@ namespace System.Net.Rina.Shims
                 while (true)
                 {
                     Thread.Sleep(1000);
-                    var info = String.Format("{0}: Flow count {1}", DateTime.Now,_receiveBuffers.Count);
+                    var info = String.Format("{0}: Flow count {1}", DateTime.Now,m_ConnectionEndpoints.Count);
                     Trace.WriteLine(info, "INFO");
                 }
             }
@@ -262,13 +252,13 @@ namespace System.Net.Rina.Shims
         /// Creates a WinIpcContext object using the specified local address.
         /// </summary>
         /// <param name="localAddress">The name of the local IPC port.</param>
-        WinIpcObject(string localAddress)
+        WcfServiceIpcProcess(string localAddress)
         {
             LocalAddress = Address.FromWinIpcPort(localAddress);
             // create server side of channel...
-            _serviceHost = new ServiceHost(new RemoteObject(this), new Uri[]{new Uri((string)this.LocalAddress.Value)});
-            _serviceHost.AddServiceEndpoint(typeof(IRemoteObject), new NetNamedPipeBinding(), "WinIpcObject");
-            _serviceHost.Open();                        
+            m_serviceHost = new ServiceHost(new RemoteObject(this), new Uri[]{new Uri((string)this.LocalAddress.Value)});
+            m_serviceHost.AddServiceEndpoint(typeof(IRemoteObject), new NetNamedPipeBinding(), typeof(RemoteObject).ToString());
+            m_serviceHost.Open();                        
         }
 
         /// <summary>
@@ -277,51 +267,63 @@ namespace System.Net.Rina.Shims
         /// <param name="flowInstance">An instance of flow for which all the processing is perfomed.</param>
         /// <param name="remoteObject">The IWinIpcRinaObject object used for remote communication.</param>
         /// <returns>The Port object associated with newly allocated flow.</returns>
-        private Port allocateFlow(FlowInstance flowInstance, out IRemoteObject remoteObject)
+        private bool allocateFlow(FlowInformation flowInformation, out ConnectionEndpoint cep)
         {
-            var port = new Port(this, ++_lastPortId);
-            _portIdsToFlowIds.Add(port.Id, flowInstance.Id);
-
+            var port = new Port(this, ++m_lastAllocatedPortId);
             var localAddress = (string)this.LocalAddress.Value;
-            var remoteAddres = (string)flowInstance.Information.DestinationAddress.Value;
+            var remoteAddres = (string)flowInformation.DestinationAddress.Value;
             // connect to the target IPC:
-            ChannelFactory<IRemoteObject> channelFactory = new ChannelFactory<IRemoteObject>(new NetNamedPipeBinding());
-            remoteObject = channelFactory.CreateChannel(new EndpointAddress(string.Format("{0}/WinIpcObject", remoteAddres)));                        
-            _flowIdsToRemoteObjects.Add(flowInstance.Id, new RemoteSite(channelFactory,remoteObject));
-            _receiveBuffers.Add(flowInstance.Id, new Internals.FifoStream(8192));
-            return port;
+            var commObject = new ChannelFactory<IRemoteObject>(new NetNamedPipeBinding());
+            var remoteObject = commObject.CreateChannel(new EndpointAddress(string.Format("{0}/{1}", remoteAddres, typeof(RemoteObject).ToString())));
+
+            var receiveBuffer = new FifoStream(8192);
+            cep = new ConnectionEndpoint()
+            {
+                Blocking = true,
+                FlowInformation = flowInformation,
+                Port = port,
+                ReceiveBuffer = receiveBuffer,
+                CommunicationObject = commObject,
+                RemoteObject = remoteObject
+            };            
+            return true;
         }
             /// <summary>
-            /// Allocates a new flow based on provided flowInformation.
+            /// Allocates a new flow based on provided flowInformation. This is used by the initiator of the flow request.
             /// </summary>
             /// <param name="flowInformation"></param>
             /// <returns>The Port object that can be used for communication with remote party.</returns>
         public Port AllocateFlow (FlowInformation flowInformation)
 		{
-            lock(_flowManipulationLock)
+            lock(m_connectionEndpointsLock)
             {
-                var wipcPortname = (string)flowInformation.DestinationAddress.Value;
-                var flowInstance = _flowManager.AddFlow(flowInformation);
-
-                IRemoteObject remoteObject = null;
-                var port = this.allocateFlow(flowInstance, out remoteObject);
-
-                var connInfo = new ConnectionInformation()
+                var wipcPortname = (string)flowInformation.DestinationAddress.Value;              
+                ConnectionEndpoint cep = null;
+                if (this.allocateFlow(flowInformation, out cep))
                 {
-                    SourceAddress = (string)this.LocalAddress.Value,
-                    DestinationAddress = (string)flowInstance.Information.DestinationAddress.Value,
-                    SourceProcessName = flowInformation.SourceApplication.ProcessName,
-                    SourceProcessInstance = flowInformation.SourceApplication.ProcessInstance,
-                    SourceEntityName = flowInformation.SourceApplication.EntityName,
-                    SourceEntityInstance = flowInformation.SourceApplication.EntityInstance,
-                    DestinationProcessName = flowInformation.DestinationApplication.ProcessName,
-                    DestinationProcessInstance = flowInformation.DestinationApplication.ProcessInstance,
-                    DestinationEntityName = flowInformation.DestinationApplication.EntityName,
-                    DestinationEntityInstance = flowInformation.DestinationApplication.EntityInstance
-                };
-                flowInstance.RemotePortId = remoteObject.OpenConnection(connInfo);
-                _remotePortIdsToFlowIds[flowInstance.RemotePortId] = flowInstance.Id;
-                return port;
+                    var connInfo = new ConnectionInformation()
+                    {
+                        SourceAddress = (string)this.LocalAddress.Value,
+                        DestinationAddress = (string)flowInformation.DestinationAddress.Value,
+                        SourceProcessName = flowInformation.SourceApplication.ProcessName,
+                        SourceProcessInstance = flowInformation.SourceApplication.ProcessInstance,
+                        SourceEntityName = flowInformation.SourceApplication.EntityName,
+                        SourceEntityInstance = flowInformation.SourceApplication.EntityInstance,
+                        DestinationProcessName = flowInformation.DestinationApplication.ProcessName,
+                        DestinationProcessInstance = flowInformation.DestinationApplication.ProcessInstance,
+                        DestinationEntityName = flowInformation.DestinationApplication.EntityName,
+                        DestinationEntityInstance = flowInformation.DestinationApplication.EntityInstance
+                    };
+                    // ask the other side to open connection
+                    var rid = cep.RemoteObject.OpenConnection(connInfo);
+                    if (rid > 0)
+                    {
+                        cep.ConnectionId = rid;
+                        m_ConnectionEndpoints.Add(cep.Port.Id, cep.ConnectionId, cep);
+                        return cep.Port;
+                    }
+                }
+                return null;
             }
         }
 
@@ -333,71 +335,76 @@ namespace System.Net.Rina.Shims
         /// <returns></returns>
         internal Port AllocateFlow(ConnectionInformation connInfo)
         {
-            lock(_flowManipulationLock)
+            lock(m_connectionEndpointsLock)
             {
-                var flowInstance = _flowManager.AddFlow(connInfo.Reverse().GetFlowInformation());
-                IRemoteObject remoteObject = null;
-                var port = allocateFlow(flowInstance, out remoteObject);
-                flowInstance.RemotePortId = port.Id;
-                _remotePortIdsToFlowIds[flowInstance.RemotePortId] = flowInstance.Id;
-                return port;
+                var flowInformation = connInfo.Reverse().GetFlowInformation();
+                ConnectionEndpoint cep = null;
+                if (allocateFlow(flowInformation, out cep))
+                {
+                    cep.ConnectionId = cep.Port.Id;                  
+                    m_ConnectionEndpoints.Add(cep.Port.Id, cep.ConnectionId, cep);
+                    return cep.Port;
+                }
+                return null;
             }
         }
 
 		public void DeallocateFlow (Port port)
 		{
-            lock(_flowManipulationLock)
+            lock(m_connectionEndpointsLock)
             {
-                var fid = _portIdsToFlowIds[port.Id];
-                var flow = _flowManager.GetFlowInstance(fid);
-
-                _receiveBuffers.Remove(fid);
-                _flowIdsToRemoteObjects[fid].Close();
-                _flowIdsToRemoteObjects.Remove(fid);
-                _remotePortIdsToFlowIds.Remove(flow.RemotePortId);
-                _portIdsToFlowIds.Remove(port.Id);
-                _flowManager.DeleteFlow(fid);
+                ConnectionEndpoint cep;
+                if (m_ConnectionEndpoints.TryGetValue(primaryKey: port.Id, val: out cep))
+                {
+                    cep.CommunicationObject.Close();
+                    cep.ReceiveBuffer.Dispose();
+                    m_ConnectionEndpoints.Remove(primaryKey: port.Id);
+                }
             }
         }
 
         public int Send(Port port, byte[] buffer, int offset, int count)
         {
-            var fid = _portIdsToFlowIds[port.Id];
-            var flowInst = _flowManager.GetFlowInstance(fid);
-            var remote = _flowIdsToRemoteObjects[fid];
-
-            var dataToSent = new byte[count];
-            Buffer.BlockCopy(buffer, offset, dataToSent, 0, count);
-
-            var amount = remote.RemoteObject.PushData(flowInst.RemotePortId, dataToSent);
-            return amount;
+            ConnectionEndpoint cep;
+            if (m_ConnectionEndpoints.TryGetValue(primaryKey: port.Id, val: out cep))
+            {                
+                var dataToSent = new byte[count];
+                Buffer.BlockCopy(buffer, offset, dataToSent, 0, count);
+                var amount = cep.RemoteObject.PushData(cep.ConnectionId, dataToSent);
+                return amount;
+            }
+            return -1;
         }
 
 		public int Receive (Port port, byte[] buffer, int offset, int count)
 		{
-            var fid = _portIdsToFlowIds[port.Id];
-            var data = _receiveBuffers[fid];
-            if (port.Blocking) data.WaitForData(Timeout.Infinite);
-            var bytesToRead = Math.Min(data.AvailableBytes, count);
-            return data.Read(buffer, offset, bytesToRead);
+            ConnectionEndpoint cep;
+            if (m_ConnectionEndpoints.TryGetValue(primaryKey: port.Id, val: out cep))
+            {
+                var data = cep.ReceiveBuffer;
+                if (port.Blocking) data.WaitForData(Timeout.Infinite);
+                var bytesToRead = Math.Min(data.AvailableBytes, count);
+                return data.Read(buffer, offset, bytesToRead);
+            }
+            return -1;
 		}
         
 
 		public void RegisterApplication (ApplicationNamingInfo appInfo, ConnectionRequestHandler reqHandler)
 		{
-            lock(_appManipulationLock)
+            lock(m_generalLock)
             {
                 var info = String.Format("Application '{0}' registered.", appInfo.ProcessName);
                 Trace.WriteLine(info, "INFO");
-                this._registeredApplications.Add(new RegisteredApplication() { ApplicationInfo = appInfo, Handler = reqHandler });
+                this.m_registeredApplications.Add(new RegisteredApplication() { ApplicationInfo = appInfo, Handler = reqHandler });
             }
 		}
 
         public void DeregisterApplication(ApplicationNamingInfo appInfo)
         {
-            lock(_appManipulationLock)
+            lock(m_generalLock)
             {
-                this._registeredApplications.RemoveAll(x =>
+                this.m_registeredApplications.RemoveAll(x =>
                 {
                     return appInfo.Matches(x.ApplicationInfo);
                 });
@@ -406,12 +413,12 @@ namespace System.Net.Rina.Shims
 
         internal ulong ConnectToApplication(ConnectionInformation connectionInformation)
         {
-            lock(_appManipulationLock)
+            lock(m_generalLock)
             {
                 var info = String.Format("Connection request to application '{0}'.", connectionInformation.DestinationProcessName);
                 Trace.WriteLine(info, "INFO");
 
-                var app = _registeredApplications.Find(r => { return r.ApplicationInfo.ProcessName.Equals(connectionInformation.DestinationProcessName, StringComparison.InvariantCultureIgnoreCase); });
+                var app = m_registeredApplications.Find(r => { return r.ApplicationInfo.ProcessName.Equals(connectionInformation.DestinationProcessName, StringComparison.InvariantCultureIgnoreCase); });
                 if (app != null)
                 {
                     AcceptFlowHandler afh = null;
@@ -438,9 +445,17 @@ namespace System.Net.Rina.Shims
             }
         }
 
-        public FlowState GetFlowState(Port port)
+        public PortInformationOptions GetPortInformation(Port port)
         {
-            throw new NotImplementedException();
+            if (port == null) throw new ArgumentNullException("port");
+            PortInformationOptions opt = 0;
+            ConnectionEndpoint cep;
+            if (m_ConnectionEndpoints.TryGetValue(primaryKey:port.Id, val: out cep))
+            {
+                opt |= cep.CommunicationObject.State == CommunicationState.Opened ? PortInformationOptions.Connected : 0;
+                opt |= cep.Blocking ? 0 :  PortInformationOptions.NonBlocking;
+            }
+            return opt;
         }
 
         public int GetReceiveBufferSize(Port port)
@@ -463,68 +478,91 @@ namespace System.Net.Rina.Shims
             throw new NotImplementedException();
         }
 
-        private bool _disposedValue = false; // To detect redundant calls
-        private object _disposeLock = new object();
+        private bool m_disposedValue = false; // To detect redundant calls
+        private object m_disposeLock = new object();
         protected virtual void Dispose(bool disposing) 
         {
-            lock(_disposeLock)
+            lock(m_disposeLock)
             {
-                if (!_disposedValue)
+                if (!m_disposedValue)
                 {
                     if (disposing)
                     {
-                        var info = String.Format("Shutting down worker thread '{0}'.", this._worker.ManagedThreadId);
+                        var info = String.Format("Shutting down worker thread '{0}'.", this.m_IpcWorker.ManagedThreadId);
                         Trace.WriteLine(info, "INFO");
 
-                        this._worker.Abort();
+                        this.m_IpcWorker.Abort();
 
-                        info = String.Format("Waiting for thread '{0}' to finish.", this._worker.ManagedThreadId);
+                        info = String.Format("Waiting for thread '{0}' to finish.", this.m_IpcWorker.ManagedThreadId);
                         Trace.WriteLine(info, "INFO");
 
-                        this._worker.Join();
+                        this.m_IpcWorker.Join();
 
-                        info = String.Format("Thread '{0}' finished. Disposing managed resources of the current IPC.", this._worker.ManagedThreadId);
+                        info = String.Format("Thread '{0}' finished. Disposing managed resources of the current IPC.", this.m_IpcWorker.ManagedThreadId);
                         Trace.WriteLine(info, "INFO");
 
-                        CloseServiceHost();
+                        closeServiceHost();
 
                         info = String.Format("IPC disposed.");
                         Trace.WriteLine(info, "INFO");
                     }
-                    this._registeredApplications = null;
-                    this._receiveBuffers.Clear();
-                    this._portIdsToFlowIds.Clear();
-                    this._flowManager = null;
-                    this._flowIdsToRemoteObjects.Clear();
-                    this._remotePortIdsToFlowIds.Clear();
-                    _disposedValue = true;
+
+                    this.m_registeredApplications = null;
+                    this.m_ConnectionEndpoints.Clear();
+                    m_disposedValue = true;
                 }
             }
         }
         
-        private void CloseServiceHost()
+        private void closeServiceHost()
         {
-            if (_serviceHost.State == CommunicationState.Opened)
+            if (m_serviceHost.State == CommunicationState.Opened)
             {
-                var info = String.Format("Closing IPC service host (State='{0}').", this._serviceHost.State);
+                var info = String.Format("Closing IPC service host (State='{0}').", this.m_serviceHost.State);
                 Trace.WriteLine(info, "INFO");
-                foreach (var x in _flowIdsToRemoteObjects)
+                foreach (var x in m_ConnectionEndpoints)
                 {
-                    var f = this._flowManager.GetFlowInstance(x.Key);
-                    try { x.Value.RemoteObject.CloseConnection(f.RemotePortId); x.Value.Close(); } catch (Exception)
+                    var cep = x.Value;                                        
+                    try {
+                        cep.RemoteObject.CloseConnection(cep.ConnectionId);
+                        cep.CommunicationObject.Close();
+                    } catch (Exception)
                     {
-                        info = String.Format("Remote site is not available (Address='{0}', Application='{1}').", f.Information.DestinationAddress, f.Information.DestinationApplication, f.RemotePortId);
+                        info = String.Format("Remote site is not available (Address='{0}', Application='{1}').", 
+                            cep.FlowInformation.DestinationAddress, cep.FlowInformation.DestinationApplication, cep.ConnectionId);
                         Trace.WriteLine(info, "INFO");
                     }                
                 }
             }
-            _serviceHost.Close();            
+            m_serviceHost.Close();            
         }
 
         // This code added to correctly implement the disposable pattern.
         public void Dispose()
         {
             Dispose(true);
+        }
+
+        public void SetBlocking(Port port, bool value)
+        {
+            lock(m_connectionEndpointsLock)
+            {
+                ConnectionEndpoint cep;
+                if (m_ConnectionEndpoints.TryGetValue(primaryKey: port.Id, val: out cep))
+                {
+                    cep.Blocking = value;                
+                }
+            }
+        }
+
+        public int AvailableData(Port port)
+        {
+            ConnectionEndpoint cep;
+            if (m_ConnectionEndpoints.TryGetValue(primaryKey: port.Id, val: out cep))
+            {
+                return cep.ReceiveBuffer.AvailableBytes;
+            }
+            return -1;
         }
 
 
@@ -541,9 +579,9 @@ namespace System.Net.Rina.Shims
         [ServiceBehavior(InstanceContextMode = InstanceContextMode.Single, IncludeExceptionDetailInFaults = true)]
         internal class RemoteObject : IRemoteObject
         {
-            WinIpcObject _parentObject;
+            WcfServiceIpcProcess _parentObject;
             ChannelFactory<IRemoteObject> _channel;
-            public RemoteObject(WinIpcObject parent)
+            public RemoteObject(WcfServiceIpcProcess parent)
             {
                 this._parentObject = parent;
             }
@@ -582,16 +620,19 @@ namespace System.Net.Rina.Shims
                 var info = String.Format("PushData on connection '{0}'.", connectionId);
                 Trace.WriteLine(info, "INFO");
 
-                var flowInst = _parentObject.GetFlowByConnectionId(connectionId);
-                var recvBuffer = _parentObject._receiveBuffers[flowInst.Id];
-                recvBuffer.Write(data, 0, data.Length);
+                ConnectionEndpoint cep;
+                if (_parentObject.m_ConnectionEndpoints.TryGetValue(subKey: connectionId, val: out cep))
+                {
+                    var recvBuffer = cep.ReceiveBuffer;
+                    recvBuffer.Write(data, 0, data.Length);
 
-                info = String.Format("Receiving buffer now contains {0}bytes.", recvBuffer.AvailableBytes);
-                Trace.WriteLine(info, "INFO");
-                return data.Length;
+                    info = String.Format("Receiving buffer now contains {0}bytes.", recvBuffer.AvailableBytes);
+                    Trace.WriteLine(info, "INFO");
+                    return data.Length;
+                }
+                return -1;
             }
         }
         #endregion
     }
 }
-

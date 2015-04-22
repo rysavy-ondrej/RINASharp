@@ -21,9 +21,9 @@ namespace System.Net.Rina.Security
         public SduCompressionMethod CompressionMethod { get; private set; }
         public SduEncryptionMethod EncryptionMethod { get; private set; }
         public SduIntegrityMethod IntegrityMethod { get; private set; }
-        public SduLifelimitMethod LifelimitMethod { get; private set; }
+        public SduLifetimeMethod LifelimitMethod { get; private set; }
 
-        public SecurityContext Create(FlowInstance flowInstance, SduCompressionMethod compressionMethod, SduEncryptionMethod encryptionMethod, SduIntegrityMethod integrityMethod, SduLifelimitMethod lifelimitMethod)
+        public SecurityContext Create(FlowInstance flowInstance, SduCompressionMethod compressionMethod, SduEncryptionMethod encryptionMethod, SduIntegrityMethod integrityMethod, SduLifetimeMethod lifelimitMethod)
         {
             var sc = new SecurityContext()
             {

@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 using System.IO;
 using System.Threading;
 
-namespace System.Net.Rina.Internals
+namespace System.IO
 {
     public class FifoStream : Stream
     {

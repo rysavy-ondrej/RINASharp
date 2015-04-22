@@ -20,7 +20,7 @@ namespace TimeService
     class Program
     {
 
-        static WinIpcObject ipc;
+        static WcfServiceIpcProcess ipc;
         // Establish an event handler to process key press events.
         protected static void consoleCancelEventHandler(object sender, ConsoleCancelEventArgs args)
         {
@@ -37,7 +37,7 @@ namespace TimeService
             {
                 case "server": /// Server side
                     {
-                        using (ipc = WinIpcObject.Create("server"))
+                        using (ipc = WcfServiceIpcProcess.Create("server"))
                         {
                             if (ipc == null) return;
                             ipc.RegisterApplication(new ApplicationNamingInfo("TimeServer", "1", "TimeServiceProtocol", "V1"), applicationRequestHandler);
@@ -48,7 +48,7 @@ namespace TimeService
                 case "client": /// Client side:
                     {
                         var r = new Random();
-                        using (ipc = WinIpcObject.Create("client"+Process.GetCurrentProcess().Id.ToString()))
+                        using (ipc = WcfServiceIpcProcess.Create("client"+Process.GetCurrentProcess().Id.ToString()))
                         {
                             if (ipc == null) return;
                             var remoteAddress = Address.FromWinIpcPort("server");
@@ -122,10 +122,9 @@ namespace TimeService
             }
 
             private void worker()
-            {                
-                var stream = new System.Net.Rina.Helpers.IpcChannelStream(this._context, this._port);
-                Trace.WriteLine("TimeServer: Serving request...");
+            {
                 _port.Blocking = true;
+                using (var stream = new IpcChannelStream(this._port))                    
                 using (var tr = new StreamReader(stream))
                 using (var tw = new StreamWriter(stream))
                 {
@@ -139,7 +138,7 @@ namespace TimeService
                         default: tw.WriteLine("ERROR: Invalid request!"); break;
                     }
                 }
-                stream.Close();                
+                // Close the connection by deallocating flow, is it correct?
                 this._context.DeallocateFlow(this._port);
             }
         }

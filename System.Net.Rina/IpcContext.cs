@@ -55,7 +55,6 @@ namespace System.Net.Rina
 
 		Address LocalAddress { get; }
 
-
 		/// <summary>
 		/// Allocates the new flow according the specified information.
 		/// </summary>
@@ -67,9 +66,19 @@ namespace System.Net.Rina
 		/// </summary>
 		/// <param name="port">Port descriptor.</param>
 		void DeallocateFlow (Port port);
+        /// <summary>
+        /// Sets whether the given port will have blocking or non-blocking behavior.
+        /// </summary>
+        /// <param name="port"></param>
+        /// <param name="value"></param>
+        void SetBlocking(Port port, bool value);
 
-
-		FlowState GetFlowState (Port port);
+        /// <summary>
+        /// Gets information about the specified port.
+        /// </summary>
+        /// <param name="port">The port for which information is to be retrieved.</param>
+        /// <returns>PortInformationOptions for the given port.</returns>
+        PortInformationOptions GetPortInformation (Port port);
 
         /// <summary>
         /// Send synchronously sends data to the remote host using specified Port and returns the number of bytes successfully sent. 
@@ -80,6 +89,12 @@ namespace System.Net.Rina
         /// <param name="size">The number of bytes to send. </param>
         /// <returns>The number of bytes sent.</returns>
         int Send(Port port, byte[] buffer, int offset, int size);
+        /// <summary>
+        /// Gets amount of data avilable for reading from the port.
+        /// </summary>
+        /// <param name="port"></param>
+        /// <returns></returns>
+        int AvailableData(Port port);
 
         /// <summary>
         /// Gets a value that specifies the size of the receive buffer of the Port.
