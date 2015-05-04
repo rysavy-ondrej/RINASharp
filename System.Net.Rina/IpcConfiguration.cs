@@ -29,7 +29,7 @@ namespace System.Net.Rina
     /// </summary>
 	public struct IpcConfiguration
 	{
-        
+        public string LocalAddress { get; set; }    
 	}
 }
 

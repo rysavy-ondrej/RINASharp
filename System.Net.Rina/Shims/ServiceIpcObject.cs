@@ -151,7 +151,7 @@ namespace System.Net.Rina.Shims
     /// This is implementation of IpcProcess for ShimDif that employs WCF Service model.
     /// </summary>
     [ShimIpc("WcfServiceIpc")]
-    public class WcfServiceIpcProcess : IpcContext, IDisposable
+    public class WcfServiceIpcProcess : IRinaIpc, IDisposable
 	{
         Object m_connectionEndpointsLock = new Object();
         Object m_generalLock = new Object();
@@ -314,11 +314,19 @@ namespace System.Net.Rina.Shims
                         DestinationEntityName = flowInformation.DestinationApplication.EntityName,
                         DestinationEntityInstance = flowInformation.DestinationApplication.EntityInstance
                     };
+                    ulong cepId = 0;
                     // ask the other side to open connection
-                    var rid = cep.RemoteObject.OpenConnection(connInfo);
-                    if (rid > 0)
+                    try
                     {
-                        cep.ConnectionId = rid;
+                        cepId = cep.RemoteObject.OpenConnection(connInfo);
+                    }
+                    catch (Exception e)
+                    {
+                        Trace.WriteLine("Could not connect remote site: s" + e.Message, "ERROR");
+                    }
+                    if (cepId > 0)
+                    {
+                        cep.ConnectionId = cepId;
                         m_ConnectionEndpoints.Add(cep.Port.Id, cep.ConnectionId, cep);
                         return cep.Port;
                     }

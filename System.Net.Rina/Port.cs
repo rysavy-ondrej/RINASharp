@@ -105,7 +105,7 @@ namespace System.Net.Rina
         internal const int DefaultCloseTimeout = -1;
         private int m_IntCleanedUp = 0;
 
-        public IpcContext Ipc { get; private set; }
+        public IRinaIpc Ipc { get; private set; }
 		public UInt64 Id { get; private set; }
         /// <summary>
         /// Gets or sets a value that indicates whether the Port is in blocking mode.
@@ -156,7 +156,7 @@ namespace System.Net.Rina
             }        
         }
 
-        internal Port (IpcContext ipc, UInt64 id)
+        internal Port (IRinaIpc ipc, UInt64 id)
 		{
 			this.Ipc = ipc;
 			this.Id = id;

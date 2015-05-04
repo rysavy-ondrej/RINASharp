@@ -8,14 +8,17 @@ namespace System.Net.Rina.Security
 {
 
     /// <summary>
-    /// This class stores informaiton about SDU protection checking result.
+    /// This class stores information about SDU protection checking result.
     /// </summary>
     class SduProtectionResult
     {
            
     }
 
-    class SduProtection
+    /// <summary>
+    /// This class represents SduProtection container. 
+    /// </summary>
+    class SduProtectionContainer
     {
         /// <summary>
         /// Allocates a byte array that can accomodate all data of length specified in <paramref name="dataLength"/>and

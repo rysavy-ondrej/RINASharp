@@ -21,6 +21,7 @@
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 //
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 namespace System.Net.Rina
 {
@@ -38,7 +39,7 @@ namespace System.Net.Rina
     /// <param name="flowInformation">The flow information describing the new request.</param>
     /// <param name="acceptFlowHandler">A delegate that will be called in case of Accept response to fed the application with the information about the connection parameters.</param>
     /// <returns>The connection request result. It can be either Accept or Reject.</returns>
-    public delegate ConnectionRequestResult ConnectionRequestHandler(IpcContext context, FlowInformation flowInformation, out AcceptFlowHandler acceptFlowHandler);
+    public delegate ConnectionRequestResult ConnectionRequestHandler(IRinaIpc context, FlowInformation flowInformation, out AcceptFlowHandler acceptFlowHandler);
 
     /// <summary>
     /// This delegate is used to inform application that accepted a new request about the created flow. In particulat, application 
@@ -47,11 +48,11 @@ namespace System.Net.Rina
     /// <param name="context">The IpcContext object which manages the communication.</param>
     /// <param name="flowInformation">The flow information describing communicaton parties.</param>
     /// <param name="port">The port object used to communication with other end point.</param>
-    public delegate void AcceptFlowHandler(IpcContext context, FlowInformation flowInformation, Port port);
+    public delegate void AcceptFlowHandler(IRinaIpc context, FlowInformation flowInformation, Port port);
 	/// <summary>
 	/// This interface represents basic IPC API.
 	/// </summary>
-	public interface IpcContext {
+	public interface IRinaIpc {
 
 		Address LocalAddress { get; }
 
@@ -95,6 +96,13 @@ namespace System.Net.Rina
         /// <param name="port"></param>
         /// <returns></returns>
         int AvailableData(Port port);
+
+        /// <summary>
+        /// Gets a WaitHandle for passive waiting on available data. It always return the same handle for the port.
+        /// </summary>
+        /// <param name="port">Port for which the handle is created.</param>
+        /// <returns></returns>
+        WaitHandle DataAvailableWaitHandle(Port port);
 
         /// <summary>
         /// Gets a value that specifies the size of the receive buffer of the Port.

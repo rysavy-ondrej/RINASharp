@@ -31,9 +31,9 @@ namespace System.Net.Rina
 	public class IpcLocationVector
 	{
 		public Address RemoteAddress { get; private set; }
-		public IpcContext LocalIpc { get; private set; }
+		public IRinaIpc LocalIpc { get; private set; }
 
-		public IpcLocationVector(Address address, IpcContext ipc)
+		public IpcLocationVector(Address address, IRinaIpc ipc)
 		{
 			this.RemoteAddress = address;
 			this.LocalIpc = ipc;

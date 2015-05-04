@@ -10,7 +10,7 @@ namespace System.IO
 {
     public class FifoStream : Stream
     {
-
+                                                                        
         private object _lockForRead;
         private object _lockForAll;
         private Queue<byte[]> _chunks;

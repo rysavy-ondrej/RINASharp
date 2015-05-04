@@ -63,6 +63,8 @@ namespace TimeService
                             while (true)
                             {
                                 var port = ipc.AllocateFlow(flowInformation);
+                                if (port == null)
+                                    break;
                                 port.Blocking = true;
 
                                 var cmdBytes = System.Text.ASCIIEncoding.ASCII.GetBytes("DateTime.Now\n");
@@ -88,7 +90,7 @@ namespace TimeService
         /// <summary>
         /// This method decides whether to accept or reject the request. 
         /// </summary>
-        private static ConnectionRequestResult applicationRequestHandler(IpcContext context, FlowInformation flowInformation, out AcceptFlowHandler acceptFlowHandler)
+        private static ConnectionRequestResult applicationRequestHandler(IRinaIpc context, FlowInformation flowInformation, out AcceptFlowHandler acceptFlowHandler)
         {
             acceptFlowHandler = Program.acceptFlowHandler;
             return ConnectionRequestResult.Accept;
@@ -96,7 +98,7 @@ namespace TimeService
         /// <summary>
         /// This method is called for creating a new instance for the server and executing its worker thread.
         /// </summary>
-        private static void acceptFlowHandler(IpcContext context, FlowInformation flowInformation, Port port)
+        private static void acceptFlowHandler(IRinaIpc context, FlowInformation flowInformation, Port port)
         {            
             var s = new TimeServerInstance(context, port);
             s.Start();                    
@@ -104,10 +106,10 @@ namespace TimeService
 
         internal class TimeServerInstance
         {
-            IpcContext _context;
+            IRinaIpc _context;
             Port _port;
             Thread _thread;
-            internal TimeServerInstance(IpcContext context, Port port)
+            internal TimeServerInstance(IRinaIpc context, Port port)
             {
                 this._context = context;
                 this._port = port;

@@ -40,15 +40,19 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="DataUnits\PduInternal.cs" />
+    <Compile Include="DataUnits\SduInternal.cs" />
     <Compile Include="Helpers\IpcChannelStream.cs" />
+    <Compile Include="Internals\ByteArraySegment.cs" />
     <Compile Include="Internals\FifoStream.cs" />
     <Compile Include="Internals\MultiKeyDictionary.cs" />
+    <Compile Include="IpcHost.cs" />
     <Compile Include="Transport\DataTransferControlService.cs" />
     <Compile Include="Naming\StaticNameService.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Port.cs" />
     <Compile Include="ApplicationEntity.cs" />
-    <Compile Include="IpcObject.cs" />
+    <Compile Include="IpcProcess.cs" />
     <Compile Include="ApplicationNamingInfo.cs" />
     <Compile Include="IpcConfiguration.cs" />
     <Compile Include="FlowInstance.cs" />
@@ -62,7 +66,7 @@
     <Compile Include="Routing\LinkStateRoutingService.cs" />
     <Compile Include="Protocols\DataTransferProtocol.cs" />
     <Compile Include="Internals\IpcInternalDataflowModel.cs" />
-    <Compile Include="IpcContext.cs" />
+    <Compile Include="IRinaIpc.cs" />
     <Compile Include="FlowInformation.cs" />
     <Compile Include="QoSParameters.cs" />
     <Compile Include="IpcPolicies.cs" />
@@ -76,13 +80,13 @@
     <Compile Include="Security\SecurityContext.cs" />
     <Compile Include="Security\SecurityContextManager.cs" />
     <Compile Include="Shims\ShimIpcAttribute.cs" />
+    <Compile Include="Transport\DtStateVector.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.targets" />
   <ItemGroup />
   <ItemGroup>
     <None Include="packages.config" />
     <None Include="RinaCore.cd" />
-    <None Include="Shims\HttpIpcObject.cs" />
     <Compile Include="Shims\ServiceIpcObject.cs" />
   </ItemGroup>
 </Project>
