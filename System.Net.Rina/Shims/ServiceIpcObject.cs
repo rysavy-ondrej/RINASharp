@@ -26,6 +26,8 @@ using System.ServiceModel;
 using System.Threading;
 using System.Diagnostics;
 using System.Runtime.Serialization;
+using System.Threading.Tasks;
+
 namespace System.Net.Rina.Shims
 {
     /// <summary>
@@ -384,17 +386,18 @@ namespace System.Net.Rina.Shims
             return -1;
         }
 
-		public int Receive (Port port, byte[] buffer, int offset, int count)
+		public byte[] Receive (Port port)
 		{
             ConnectionEndpoint cep;
             if (m_ConnectionEndpoints.TryGetValue(primaryKey: port.Id, val: out cep))
             {
                 var data = cep.ReceiveBuffer;
                 if (port.Blocking) data.WaitForData(Timeout.Infinite);
-                var bytesToRead = Math.Min(data.AvailableBytes, count);
-                return data.Read(buffer, offset, bytesToRead);
+                var buffer = new byte[data.AvailableBytes];
+                data.Read(buffer, 0, buffer.Length);
+                return buffer;
             }
-            return -1;
+            return null;
 		}
         
 
@@ -464,26 +467,6 @@ namespace System.Net.Rina.Shims
                 opt |= cep.Blocking ? 0 :  PortInformationOptions.NonBlocking;
             }
             return opt;
-        }
-
-        public int GetReceiveBufferSize(Port port)
-        {
-            throw new NotImplementedException();
-        }
-
-        public void SetReceiveBufferSize(Port port, int size)
-        {
-            throw new NotImplementedException();
-        }
-
-        public int GetSendBufferSize(Port port)
-        {
-            throw new NotImplementedException();
-        }
-                                                                                                                           
-        public void SetSendBufferSize(Port port, int size)
-        {
-            throw new NotImplementedException();
         }
 
         private bool m_disposedValue = false; // To detect redundant calls
@@ -571,6 +554,21 @@ namespace System.Net.Rina.Shims
                 return cep.ReceiveBuffer.AvailableBytes;
             }
             return -1;
+        }
+
+        public Task<bool> DataAvailableAsync(Port port)
+        {
+            throw new NotImplementedException();
+        }
+
+        public bool DataAvailable(Port port)
+        {
+            ConnectionEndpoint cep;
+            if (m_ConnectionEndpoints.TryGetValue(primaryKey: port.Id, val: out cep))
+            {
+                return cep.ReceiveBuffer.AvailableBytes != 0;
+            }
+            return false;
         }
 
 

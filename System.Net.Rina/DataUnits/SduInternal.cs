@@ -9,7 +9,14 @@ namespace System.Net.Rina.DataUnits
 {
     internal class SduInternal
     {
-                
+        private object p;
+
+        public SduInternal(object p, ByteArraySegment userData)
+        {
+            this.p = p;
+            UserData = userData;
+        }
+
         internal SduInternal(Port port, byte[] buffer, int offset, int size)
         {
             Port = port;

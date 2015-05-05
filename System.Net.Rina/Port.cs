@@ -105,6 +105,17 @@ namespace System.Net.Rina
         internal const int DefaultCloseTimeout = -1;
         private int m_IntCleanedUp = 0;
 
+
+
+
+        public bool Available
+        {
+            get
+            {
+                return Ipc.DataAvailable(this);
+            }
+        }
+
         public IRinaIpc Ipc { get; private set; }
 		public UInt64 Id { get; private set; }
         /// <summary>
@@ -145,16 +156,6 @@ namespace System.Net.Rina
         /// Gets the type of port. 
         /// </summary>
         public PortType PortType { get; internal set; }
-        /// <summary>
-        /// Gets the amoutn of available data that can be read from the port.
-        /// </summary>
-        public int Available
-        {
-            get
-            {
-                return Ipc.AvailableData(this);
-            }        
-        }
 
         internal Port (IRinaIpc ipc, UInt64 id)
 		{
@@ -180,9 +181,9 @@ namespace System.Net.Rina
         /// <param name="offset"></param>
         /// <param name="size"></param>
         /// <returns></returns>
-        internal int Receive(byte[] buffer, int offset, int size)
+        internal byte[] Receive()
         {
-            return this.Ipc.Receive(this, buffer, offset, size);
+            return this.Ipc.Receive(this);
         }
 
         internal int Send(byte[] buffer, int offset, int count)

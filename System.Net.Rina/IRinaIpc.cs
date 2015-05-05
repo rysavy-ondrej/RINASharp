@@ -56,12 +56,14 @@ namespace System.Net.Rina
 
 		Address LocalAddress { get; }
 
-		/// <summary>
-		/// Allocates the new flow according the specified information.
-		/// </summary>
-		/// <returns>The flow.</returns>
-		/// <param name="flow">Flow information object.</param>
-		Port AllocateFlow (FlowInformation flow);
+
+
+        /// <summary>
+        /// Allocates the new flow according the specified information.
+        /// </summary>
+        /// <returns>The flow.</returns>
+        /// <param name="flow">Flow information object.</param>
+        Port AllocateFlow (FlowInformation flow);
 		/// <summary>
 		/// Deallocates the flow associated with the provided port.
 		/// </summary>
@@ -90,55 +92,29 @@ namespace System.Net.Rina
         /// <param name="size">The number of bytes to send. </param>
         /// <returns>The number of bytes sent.</returns>
         int Send(Port port, byte[] buffer, int offset, int size);
-        /// <summary>
-        /// Gets amount of data avilable for reading from the port.
-        /// </summary>
-        /// <param name="port"></param>
-        /// <returns></returns>
-        int AvailableData(Port port);
+
 
         /// <summary>
-        /// Gets a WaitHandle for passive waiting on available data. It always return the same handle for the port.
-        /// </summary>
-        /// <param name="port">Port for which the handle is created.</param>
-        /// <returns></returns>
-        WaitHandle DataAvailableWaitHandle(Port port);
-
-        /// <summary>
-        /// Gets a value that specifies the size of the receive buffer of the Port.
-        /// </summary>
-        /// <returns>An Int32 that contains the size, in bytes, of the receive buffer. The default is 8192.</returns>
-        int GetReceiveBufferSize(Port port);
-
-        /// <summary>
-        /// Sets a value that specifies the size of the receive buffer of the Port.
-        /// </summary>
-        /// <param name="port">A port object for which the size is to be set.</param>
-        /// <param name="size">An Int32 that contains the size, in bytes, of the receive buffer. The default is 8192.</param>
-        void SetReceiveBufferSize(Port port, int size);
-
-        /// <summary>
-        /// Gets a value that specifies the size of the send buffer of the Port.
-        /// </summary>
-        /// <returns>An Int32 that contains the size, in bytes, of the send buffer. The default is 8192.</returns>
-        int GetSendBufferSize(Port port);
-
-        /// <summary>
-        /// Sets a value that specifies the size of the send buffer of the Port.
-        /// </summary>
-        /// <param name="port">A port object for which the size is to be set.</param>
-        /// <param name="size">An Int32 that contains the size, in bytes, of the send buffer. The default is 8192.</param>
-        void SetSendBufferSize(Port port, int size);
-
-        /// <summary>
-        /// Reads the available data from the specified port.
+        /// Reads the available data from the specified port. Depending on port settings, data are read by 
+        /// alinged to SDU boundaries. 
         /// </summary>
         /// <param name="port">Port object used for receiving data from.</param>
-        /// <param name="buffer">An array of type Byte that is the storage location for received data. </param>
-        /// <param name="offset">The position in the buffer parameter to store the received data. </param>
-        /// <param name="size">The number of bytes to receive. </param>
-        /// <returns>The number of bytes received.</returns>
-        int Receive(Port port, byte[] buffer, int offset, int size);
+        /// <returns>Buffer containing data received.</returns>
+        byte[] Receive(Port port);
+
+
+
+        bool DataAvailable(Port port);
+
+        /// <summary>
+        /// Provides a Task that asynchronously monitors the source for available output. 
+        /// </summary>
+        /// <param name="port">Port for which the handle is created.</param>
+        /// <returns>A Task that informs of whether and when more output is available. If, when the task completes, 
+        /// its Result is true, more output is available in the source (though another consumer of the source may retrieve the data). 
+        /// If it returns false, more output is not and will never be available, due to the source completing prior to output being available.
+        /// </returns>
+        Task<bool> DataAvailableAsync(Port port);
 
 		/// <summary>
 		/// Registers the application name in the current IPC. An application serves new flows that are passed

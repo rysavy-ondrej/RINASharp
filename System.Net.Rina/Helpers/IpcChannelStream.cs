@@ -263,7 +263,7 @@ namespace System.Net.Rina
                 // Ask the socket how many bytes are available. If it's
                 // not zero, return true.
 
-                return chkStreamSocket.Available != 0;
+                return chkStreamSocket.Available;
             }
         }
 
@@ -312,58 +312,84 @@ namespace System.Net.Rina
             return chkStreamSocket.Poll(microSeconds, mode);
         }
 
+
+        /// <summary>
+        /// This field contains received but unread buffered data.
+        /// Because Port Receive returns data organized into SDU, Read method
+        /// must cope with data not aligned to SDU boundaries.
+        /// </summary>
+        byte[] m_bufferedData = null;
         public override int Read([In, Out] byte[] buffer, int offset, int size)
         {
-                bool canRead = CanRead;  // Prevent race with Dispose.
-                if (m_CleanedUp)
+            bool canRead = CanRead;  // Prevent race with Dispose.
+            if (m_CleanedUp)
+            {
+                throw new ObjectDisposedException(this.GetType().FullName);
+            }
+            if (!canRead)
+            {
+                throw new InvalidOperationException("Cannot read write-only stream.");
+            }
+            //
+            // parameter validation
+            //
+            if (buffer == null)
+            {
+                throw new ArgumentNullException("buffer");
+            }
+            if (offset < 0 || offset > buffer.Length)
+            {
+                throw new ArgumentOutOfRangeException("offset");
+            }
+            if (size < 0 || size > buffer.Length - offset)
+            {
+                throw new ArgumentOutOfRangeException("size");
+            }
+
+
+            Port chkStreamPort = m_StreamPort;
+            if (chkStreamPort == null)
+            {
+                throw new IOException("Cannot read from the port. Connection was closed. ");
+            }
+
+            try
+            {
+                if (m_bufferedData == null)
                 {
-                    throw new ObjectDisposedException(this.GetType().FullName);
+                    m_bufferedData = chkStreamPort.Receive();
                 }
-                if (!canRead)
+
+                int consumedBytes = Math.Min(m_bufferedData.Length, size);
+
+                Buffer.BlockCopy(m_bufferedData, 0, buffer, offset, consumedBytes);
+
+                if (m_bufferedData.Length <= consumedBytes)
                 {
-                    throw new InvalidOperationException("Cannot read write-only stream.");
+                    m_bufferedData = null;
                 }
+                else
+                {
+                    var oldBytes = m_bufferedData;
+                    m_bufferedData = new byte[m_bufferedData.Length - consumedBytes];
+                    Buffer.BlockCopy(oldBytes, consumedBytes, m_bufferedData, 0, m_bufferedData.Length);
+                }
+
+                return consumedBytes;
+            }
+            catch (Exception exception)
+            {
+                if (exception is ThreadAbortException || exception is StackOverflowException || exception is OutOfMemoryException)
+                {
+                    throw;
+                }
+
                 //
-                // parameter validation
+                // some sort of error occured on the socket call,
+                // set the SocketException as InnerException and throw
                 //
-                if (buffer == null)
-                {
-                    throw new ArgumentNullException("buffer");
-                }
-                if (offset < 0 || offset > buffer.Length)
-                {
-                    throw new ArgumentOutOfRangeException("offset");
-                }
-                if (size < 0 || size > buffer.Length - offset)
-                {
-                    throw new ArgumentOutOfRangeException("size");
-                }
-
-
-                Port chkStreamPort = m_StreamPort;
-                if (chkStreamPort == null)
-                {
-                    throw new IOException("Cannot read from the port. Connection was closed. ");
-                }
-
-                try
-                {
-                    int bytesTransferred = chkStreamPort.Receive(buffer, offset, size);
-                    return bytesTransferred;
-                }
-                catch (Exception exception)
-                {
-                    if (exception is ThreadAbortException || exception is StackOverflowException || exception is OutOfMemoryException)
-                    {
-                        throw;
-                    }
-
-                    //
-                    // some sort of error occured on the socket call,
-                    // set the SocketException as InnerException and throw
-                    //
-                    throw new IOException("Read port error", exception);
-                }
+                throw new IOException("Read port error", exception);
+            }
 
         }
 

@@ -69,9 +69,8 @@ namespace TimeService
 
                                 var cmdBytes = System.Text.ASCIIEncoding.ASCII.GetBytes("DateTime.Now\n");
                                 ipc.Send(port, cmdBytes, 0, cmdBytes.Length);
-                                var answerBuffer = new byte[1024];
-                                var answerLength = ipc.Receive(port, answerBuffer, 0, answerBuffer.Length);
-                                var answerString = System.Text.ASCIIEncoding.ASCII.GetString(answerBuffer, 0, answerLength);
+                                var answerBuffer = ipc.Receive(port);
+                                var answerString = System.Text.ASCIIEncoding.ASCII.GetString(answerBuffer, 0, answerBuffer.Length);
                                 System.Console.WriteLine("Current remote time is: {0}", answerString);
                                 
                                 Thread.Sleep(r.Next(500));

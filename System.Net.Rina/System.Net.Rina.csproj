@@ -65,7 +65,6 @@
     <Compile Include="Routing\RoutingService.cs" />
     <Compile Include="Routing\LinkStateRoutingService.cs" />
     <Compile Include="Protocols\DataTransferProtocol.cs" />
-    <Compile Include="Internals\IpcInternalDataflowModel.cs" />
     <Compile Include="IRinaIpc.cs" />
     <Compile Include="FlowInformation.cs" />
     <Compile Include="QoSParameters.cs" />

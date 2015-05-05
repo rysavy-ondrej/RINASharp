@@ -44,12 +44,10 @@ namespace System.Net.Rina
         {
             internal IRinaIpc Ipcp { get { return this.Port.Ipc; } }
             internal Port Port { get; private set; }
-            internal WaitHandle WaitHandle { get; private set; }
             
-            internal SouthPortWrapper(Port port, WaitHandle waitHandle)
+            internal SouthPortWrapper(Port port)
             {
                 Port = port;
-                WaitHandle = waitHandle;
             }
         }
 
@@ -140,39 +138,37 @@ namespace System.Net.Rina
             throw new NotImplementedException();
         }
 
-        WaitHandle[] _southPortWaitHandleArray;
-        Port[] _southPortIndexArray;
-        void updateWaitHandleList()
-        {
-            if (_southPortWaitHandleArray == null)
-            {
-                _southPortWaitHandleArray = m_southPortList.Select(x => x.WaitHandle).ToArray();
-                _southPortIndexArray = m_southPortList.Select(x => x.Port).ToArray();
-            }
-        }
 
+
+
+        bool m_southPortReaderRefreshNeeded = true;
         /// <summary>
         /// Worker just take care of all south ports utilized by the current IPCP. If there are some data avilable then 
         /// these data are sent to the dataflow processing pipeline. 
         /// </summary>
         void Worker()
-        {            
+        {
+            // TODO: Check if this does not lead to starvation.      
             try
-            {                       
+            {
+                Task<bool>[] tasks = null;
                 while (true)
                 {
-                    updateWaitHandleList();
-                    var waitList = _southPortWaitHandleArray;
-                    var portList = _southPortIndexArray;
-                    int handleIndex = WaitHandle.WaitAny(waitList);
-                    var port = portList[handleIndex];
-                    byte[] buffer = new byte[port.Ipc.AvailableData(port)];
-                    port.Ipc.Receive(port, buffer, 0, buffer.Length);
+                    if (tasks == null || m_southPortReaderRefreshNeeded)
+                    {
+                        tasks = m_southPortList.Select(x => x.Ipcp.DataAvailableAsync(x.Port)).ToArray();
+                        m_southPortReaderRefreshNeeded = false;
+                    }
+                    int index = Task.WaitAny(tasks);
+                    var port = m_southPortList[index].Port;
+                    byte[] buffer = port.Ipc.Receive(port);
                     var sdu = new SduInternal(port, buffer, 0, buffer.Length);
 
+
+                    tasks[index] = m_southPortList[index].Ipcp.DataAvailableAsync(port);
                 }
             }
-            catch(ThreadAbortException)
+            catch (ThreadAbortException)
             { }
         }
 
@@ -185,7 +181,11 @@ namespace System.Net.Rina
             /// </summary>
             /// <param name="p"></param>
             /// <returns></returns>
-            internal PduInternal Process(PduInternal p)
+            internal PduInternal SendPdu(PduInternal p)
+            {
+                throw new NotImplementedException();
+            }
+            internal IEnumerable<PduInternal> ReceivePdu(PduInternal p)
             {
                 throw new NotImplementedException();
             }
@@ -197,79 +197,53 @@ namespace System.Net.Rina
             {
                 throw new NotImplementedException();
             }
+
+            internal IEnumerable<PduInternal> Verify(SduInternal p)
+            {
+                throw new NotImplementedException();
+            }
         }
 
         /// <summary>
-        /// Creates a new DTP task for newly created flow.
+        /// Creates a DTP task for newly allocated flow.
         /// </summary>
-        void bindDataTransferTask(Port northPort, Port southPort)
+        async void createDataTransferTask(Port northPort, Port southPort)
         {
             // creating blocks if the processing pipeline
             var delimiter = new SduDelimiter(1000);
-            var delimiterBlock = new TransformManyBlock<SduInternal, PduInternal>(s => delimiter.Delimiting(s));
-
-            var dtransfer = new DataTransfer();
-            var dtransferBlock = new TransformBlock<PduInternal, PduInternal>(p => dtransfer.Process(p));
-
-            // no RMT here, because this IPCP is just a transit
-            var sduprotection = new SduProtection();
-            var sduprotectionBlock = new TransformBlock<PduInternal, SduInternal>(p => sduprotection.Protect(p));
+            var dataTransfer = new DataTransfer();
+            var sduProtection = new SduProtection();
 
             // linking blocks into southbound pipeline
-            m_northPortMap[northPort.Id].InQueue.LinkTo(delimiterBlock);
-            delimiterBlock.LinkTo(dtransferBlock);
-            dtransferBlock.LinkTo(sduprotectionBlock);
-            sduprotectionBlock.LinkTo(new ActionBlock<SduInternal>(s => southPort.Send(s.UserData.Bytes, s.UserData.Offset, s.UserData.Length)));
+            var delimiterBlockSbound = new TransformManyBlock<SduInternal, PduInternal>(s => delimiter.Delimite(s));            
+            var dataTransferBlockSbound = new TransformBlock<PduInternal, PduInternal>(p => dataTransfer.SendPdu(p));
+            var sduProtectionBlockSbound = new TransformBlock<PduInternal, SduInternal>(p => sduProtection.Protect(p));  
+                      
+            m_northPortMap[northPort.Id].InQueue.LinkTo(delimiterBlockSbound);
+            delimiterBlockSbound.LinkTo(dataTransferBlockSbound);
+            dataTransferBlockSbound.LinkTo(sduProtectionBlockSbound);
+            sduProtectionBlockSbound.LinkTo(new ActionBlock<SduInternal>(s => southPort.Send(s.UserData.Bytes, s.UserData.Offset, s.UserData.Length)));
 
             // linking blocks into northbound pipeline                                                         
-            // TODO: implement linking blocks into northbound pipeline       
+            var sduProtectionBlockNbound = new TransformManyBlock<SduInternal, PduInternal>(p => sduProtection.Verify(p));
+            var dataTransferBlockNbound = new TransformManyBlock<PduInternal, PduInternal>(p => dataTransfer.ReceivePdu(p));
+            var delimiterBlockNbound = new TransformManyBlock<PduInternal, SduInternal>(s => delimiter.Compose(s));
+
+            var receiver = ReceiveAsync(southPort, sduProtectionBlockNbound);
+            sduProtectionBlockNbound.LinkTo(dataTransferBlockNbound);
+            dataTransferBlockNbound.LinkTo(delimiterBlockNbound);
+            delimiterBlockNbound.LinkTo(m_northPortMap[northPort.Id].OutQueue);
+
+            await receiver;
         }
 
-        /// <summary>
-        /// This is an implementatio of RMT functions.
-        /// It checks PDU and delivers it to appropriate target.
-        /// </summary>
-        internal class RelayAndMultiplexNorthBlock : ITargetBlock<PduInternal>
+        static async Task ReceiveAsync(Port southPort, ITargetBlock<SduInternal> target)
         {
-            public Task Completion
+            while (await southPort.Ipc.DataAvailableAsync(southPort))
             {
-                get
-                {
-                    throw new NotImplementedException();
-                }
-            }
-
-            public void Complete()
-            {
-                throw new NotImplementedException();
-            }
-
-            public void Fault(Exception exception)
-            {
-                throw new NotImplementedException();
-            }
-
-            /// <summary>
-            /// Offers a message to the ITargetBlock<TInput>, giving the target the opportunity to consume or postpone the message.
-            /// </summary>
-            /// <param name="messageHeader">A DataflowMessageHeader instance that represents the header of the message being offered.</param>
-            /// <param name="messageValue">The value of the message being offered.</param>
-            /// <param name="source">The ISourceBlock<TOutput> offering the message. This may be null.</param>
-            /// <param name="consumeToAccept">Set to true to instruct the target to call ConsumeMessage synchronously during the call to OfferMessage, 
-            /// prior to returning Accepted, in order to consume the message.</param>
-            /// <returns>The status of the offered message. If the message was accepted by the target, 
-            /// Accepted is returned, and the source should no longer use the offered message, because it is now owned by the target.</returns>
-            public DataflowMessageStatus OfferMessage(DataflowMessageHeader messageHeader, PduInternal messageValue, ISourceBlock<PduInternal> source, bool consumeToAccept)
-            {
-                if (consumeToAccept)
-                {
-                    bool messageConsumed;
-                    source.ConsumeMessage(messageHeader, this, out messageConsumed);
-                }
-
-                
-
-                return DataflowMessageStatus.Accepted;
+                var buffer = southPort.Ipc.Receive(southPort);
+                var sdu = new SduInternal(southPort, buffer, 0, buffer.Length);
+                target.Post(sdu);
             }
         }
 
@@ -281,7 +255,24 @@ namespace System.Net.Rina
             {
                 m_maxPduSize = maxPduSize;                    
             }
-            internal IEnumerable<PduInternal> Delimiting(SduInternal sdu)
+
+            /// <summary>
+            /// This method composes SDUs from provided PDUs. 
+            /// </summary>
+            /// <param name="pdu"></param>
+            /// <returns></returns>
+            internal IEnumerable<SduInternal> Compose(PduInternal pdu)
+            {
+                var sdu = new SduInternal(null, pdu.UserData);
+                yield return sdu;
+            }
+
+            /// <summary>
+            /// This method splits (delimit) sdu into one or more pdus depending on the max pdu size value.
+            /// </summary>
+            /// <param name="sdu"></param>
+            /// <returns></returns>
+            internal IEnumerable<PduInternal> Delimite(SduInternal sdu)
             {
                 var sduSize = sdu.UserData.Length;
                 var leftBytes = sduSize;
@@ -321,26 +312,6 @@ namespace System.Net.Rina
 			throw new NotImplementedException ();
 		}
 
-        public int GetReceiveBufferSize(Port port)
-        {
-            throw new NotImplementedException();
-        }
-
-        public void SetReceiveBufferSize(Port port, int size)
-        {
-            throw new NotImplementedException();
-        }
-
-        public int GetSendBufferSize(Port port)
-        {
-            throw new NotImplementedException();
-        }
-
-        public void SetSendBufferSize(Port port, int size)
-        {
-            throw new NotImplementedException();
-        }
-
         public int Send(Port port, byte[] buffer, int offset, int size)
         {
             // This API call delivers SDUs to Delimiting to delimit into some number of User-Data fields for the DTP task (see above).
@@ -356,17 +327,15 @@ namespace System.Net.Rina
             return -1;
         }
 
-        public int Receive(Port port, byte[] buffer, int offset, int size)
+        public byte[] Receive(Port port)
         {
             NorthPortController pi;
             if (m_northPortMap.TryGetValue(port.Id, out pi))
             {
                 var sdu = pi.InQueue.Receive();
-                var count = Math.Min(size, sdu.UserData.Length);
-                Buffer.BlockCopy(sdu.UserData.Bytes, sdu.UserData.Offset, buffer, offset, count);
-                return count;
+                return sdu.UserData.ActualBytes();
             }
-            return -1;
+            return null;
         }
 
         public PortInformationOptions GetPortInformation(Port port)
@@ -379,23 +348,24 @@ namespace System.Net.Rina
             throw new NotImplementedException();
         }
 
-        public int AvailableData(Port port)
+        public Task<bool> DataAvailableAsync(Port port)
         {
             NorthPortController pi;
             if (m_northPortMap.TryGetValue(port.Id, out pi))
             {
-                if (pi.InQueue.Count > 0)
-                {
-                    return 3333;
-                }
+                return pi.InQueue.OutputAvailableAsync();
             }
-            return -1;
+            return null;
         }
 
-        public WaitHandle DataAvailableWaitHandle(Port port)
+        public bool DataAvailable(Port port)
         {
             NorthPortController pi;
-            return null;
+            if (m_northPortMap.TryGetValue(port.Id, out pi))
+            {
+                return pi.InQueue.Count != 0;
+            }
+            return false;
         }
     }
 }
