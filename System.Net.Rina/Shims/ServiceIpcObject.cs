@@ -239,9 +239,10 @@ namespace System.Net.Rina.Shims
         void Run()
         {
             try {
+                
                 while (true)
                 {
-                    Thread.Sleep(1000);
+                    Thread.Sleep(5000);
                     var info = String.Format("{0}: Flow count {1}", DateTime.Now,m_ConnectionEndpoints.Count);
                     Trace.WriteLine(info, "INFO");
                 }

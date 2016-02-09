@@ -12,7 +12,32 @@ using System.Threading;
 namespace TimeService
 {
 
+    class StaticNameService : NameService
+    {
+        public StaticNameService(IRinaIpc ipc)
+        {
+            this.ipc = ipc;
+        }
+        IRinaIpc ipc;
+        public override IpcLocationVector[] GetApplicationAddresses(string applicationProcessName, string applicationEntityName)
+        {
+            if (applicationProcessName.Equals("TimeServer", StringComparison.InvariantCultureIgnoreCase))
+            {
+                var adr = Address.FromWinIpcPort("server");
+                var ipcLoc = new IpcLocationVector(adr, ipc);
+                return new IpcLocationVector[] { ipcLoc };
+            }
+            return null;
+        }
+        protected override bool Initialize()
+        {
+            return true;
+        }
 
+        protected override void Run()
+        {            
+        }
+    }
 
     /// <summary>
     /// This is a simple program that registers itself as a time server in the Time Services DIF. 
@@ -20,62 +45,84 @@ namespace TimeService
     class Program
     {
 
-        static WcfServiceIpcProcess ipc;
+        static readonly string DifName = "TS_DIF";
+        static WcfServiceIpcProcess ipc1;
         // Establish an event handler to process key press events.
         protected static void consoleCancelEventHandler(object sender, ConsoleCancelEventArgs args)
         {
-            ipc.Dispose();
+            ipc1.Dispose();
         }
         static void Main(string[] args)
-        {
+        {                                     
             Trace.Listeners.Add(new TextWriterTraceListener(Console.Out));
             Trace.AutoFlush = true;
             Console.CancelKeyPress += new ConsoleCancelEventHandler(consoleCancelEventHandler);
+
+
+            var ipcHost = new IpcHost();
 
             var serviceSide = args.Length > 0 ? args[0] : String.Empty;
             switch (serviceSide)
             {
                 case "server": /// Server side
                     {
-                        using (ipc = WcfServiceIpcProcess.Create("server"))
+                        
+                        using (ipc1 = WcfServiceIpcProcess.Create("server"))
                         {
-                            if (ipc == null) return;
-                            ipc.RegisterApplication(new ApplicationNamingInfo("TimeServer", "1", "TimeServiceProtocol", "V1"), applicationRequestHandler);
-                            ipc.Worker.Join();
+                            if (ipc1 == null) return;
+                            var conf = new IpcConfiguration()
+                            {
+                                DifName = DifName,
+                                HostName = "server"
+                            };
+                            using (var ipcp2 = new IpcProcess(ipcHost, conf, new ResourceInformationManager(new StaticNameService(ipc1))))
+                            {
+                                ipcp2.RegisterApplication(new ApplicationNamingInfo("TimeServer", "1", "TimeServiceProtocol", "V1"), applicationRequestHandler);
+                            }
+                            
+                            ipc1.Worker.Join();
                         }
                         break;                        
                     }
                 case "client": /// Client side:
                     {
                         var r = new Random();
-                        using (ipc = WcfServiceIpcProcess.Create("client"+Process.GetCurrentProcess().Id.ToString()))
+                        using (ipc1 = WcfServiceIpcProcess.Create("client"+Process.GetCurrentProcess().Id.ToString()))
                         {
-                            if (ipc == null) return;
-                            var remoteAddress = Address.FromWinIpcPort("server");
-                            var flowInformation = new FlowInformation()
+                            if (ipc1 == null) return;
+
+                            var config = new IpcConfiguration()
                             {
-                                SourceApplication = new ApplicationNamingInfo("TimeClient", "1", "TimeServiceProtocol", "V1"),
-                                DestinationApplication = new ApplicationNamingInfo("TimeServer", "1", "TimeServiceProtocol", "V1"),
-                                SourceAddress = ipc.LocalAddress,
-                                DestinationAddress = remoteAddress
+                                DifName = DifName,
+                                HostName = "client" + Process.GetCurrentProcess().Id.ToString()
                             };
-
-                            while (true)
+                            using (var ipc = new IpcProcess(ipcHost, config, new ResourceInformationManager(new StaticNameService(ipc1))))
                             {
-                                var port = ipc.AllocateFlow(flowInformation);
-                                if (port == null)
-                                    break;
-                                port.Blocking = true;
+                                var flowInformation = new FlowInformation()
+                                {
+                                    SourceApplication = new ApplicationNamingInfo("TimeClient", "1", "TimeServiceProtocol", "V1"),
+                                    DestinationApplication = new ApplicationNamingInfo("TimeServer", "1", "TimeServiceProtocol", "V1"),
+                                    SourceAddress = ipc.LocalAddress,
+                                    DestinationAddress = new Address(new Uri("rina://" + DifName + "/server"))
+                                };
 
-                                var cmdBytes = System.Text.ASCIIEncoding.ASCII.GetBytes("DateTime.Now\n");
-                                ipc.Send(port, cmdBytes, 0, cmdBytes.Length);
-                                var answerBuffer = ipc.Receive(port);
-                                var answerString = System.Text.ASCIIEncoding.ASCII.GetString(answerBuffer, 0, answerBuffer.Length);
-                                System.Console.WriteLine("Current remote time is: {0}", answerString);
-                                
-                                Thread.Sleep(r.Next(500));
-                                ipc.DeallocateFlow(port);
-                            }                            
+                                while (true)
+                                {
+                                    var port = ipc.AllocateFlow(flowInformation);
+                                    if (port == null)
+                                        break;
+                                    port.Blocking = true;
+
+                                    var cmdBytes = System.Text.ASCIIEncoding.ASCII.GetBytes("DateTime.Now\n");
+                                    ipc.Send(port, cmdBytes, 0, cmdBytes.Length);
+                                    var answerBuffer = ipc.Receive(port);
+                                    var answerString = System.Text.ASCIIEncoding.ASCII.GetString(answerBuffer, 0, answerBuffer.Length);
+                                    System.Console.WriteLine("Current remote time is: {0}", answerString);
+
+                                    Thread.Sleep(r.Next(500));
+                                    ipc.DeallocateFlow(port);
+                                }
+                            }                           
                         }
                         break; 
                     }

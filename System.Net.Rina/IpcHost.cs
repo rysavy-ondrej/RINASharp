@@ -12,12 +12,12 @@ namespace System.Net.Rina
     /// <remarks>
     /// The Ipc host is the runtime environment for hosting IPCP objects within a single OS process. 
     /// </remarks>
-    class IpcHost
+    public class IpcHost
     {
         /// <summary>
-        /// Creates IpcHost object. It alos register IPC for all Shim DIFS.
+        /// Creates IpcHost object. It also register IPC for all Shim DIFS.
         /// </summary>
-        protected IpcHost()
+        public IpcHost()
         {
 
         }
@@ -31,6 +31,18 @@ namespace System.Net.Rina
 
         }
 
+
+        /// <summary>
+        /// Registering a new Ipcp starts enrollment. 
+        /// </summary>
+        /// <param name="difAddress"></param>
+        /// <param name="ipcp"></param>
+        /// <param name="supportingIpcp"></param>
+        public void RegisterIpcp(Address difAddress, IRinaIpc ipcp, IRinaIpc[] supportingIpcp)
+        {
+            
+        }
+
         /// <summary>
         /// Enumerates all available IPC processes in the system. At the empty IpcHost, all IPCs for Shim DIFs are returned.
         /// </summary>
@@ -40,5 +52,22 @@ namespace System.Net.Rina
             return null;
         }
 
+
+        public void AddIddService()
+        { }
+
+        /// <summary>
+        /// Translates target address in the specified DIF to a reachability vector. It means to identification of
+        /// supporting IPCP and the remote address in the supporting DIF where specified target address can be reach. 
+        /// </summary>
+        /// <param name="difAddress"></param>
+        /// <param name="targetAddress"></param>
+        /// <param name="localipcp"></param>
+        /// <param name="remoteAddress"></param>
+        /// <returns></returns>
+        internal bool GetRemoteHostVector(Address difAddress, Address targetAddress, out IRinaIpc localipcp, out Address remoteAddress)
+        {
+            throw new NotImplementedException();
+        }
     }
 }

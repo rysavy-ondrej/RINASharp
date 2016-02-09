@@ -38,7 +38,10 @@ namespace System.Net.Rina.Naming
 		public abstract IpcLocationVector[] GetApplicationAddresses(string applicationProcessName, string applicationEntityName);
 
 
-		public abstract Task<IpcLocationVector[]> GetApplicationAddressesAsync(string applicationProcessName, string applicationEntityName);
+        public virtual Task<IpcLocationVector[]> GetApplicationAddressesAsync(string applicationProcessName, string applicationEntityName)
+        {
+            return Task<IpcLocationVector[]>.Run(() => { return this.GetApplicationAddresses(applicationProcessName, applicationEntityName); });
+        }
 	}
 }
 

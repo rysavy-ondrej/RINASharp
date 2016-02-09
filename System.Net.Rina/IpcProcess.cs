@@ -34,7 +34,7 @@ namespace System.Net.Rina
     /// This is generic IPCProcess class that manages all IPC in the current domain. This is the central class in the 
     /// architecture as it controls all communication in the RINA DIF. It also includes Flow Allocator.
     /// </summary>
-    public class IpcProcess : IRinaIpc
+    public class IpcProcess : IRinaIpc, IDisposable
     {
         /// <summary>
         /// This internal class maintains information about Ports of supporting IPCPs, e.g.,
@@ -77,13 +77,15 @@ namespace System.Net.Rina
         Dictionary<ulong, NorthPortController> m_northPortMap = new Dictionary<ulong, NorthPortController>();
         List<SouthPortWrapper> m_southPortList = new List<SouthPortWrapper>();
 
+        public IpcHost Host { get; private set; }
         private ulong m_lastAllocatedPortId;
 
-        public IpcProcess(IpcConfiguration config, ResourceInformationManager rim)
+        public IpcProcess(IpcHost ipcHost, IpcConfiguration config, ResourceInformationManager rim)
         {
+            Host = ipcHost;
             m_config = config;
             m_rim = rim;
-            localAddress = new Address(AddressFamily.Generic, Text.UTF8Encoding.UTF8.GetBytes(config.LocalAddress));
+            localAddress = new Address(config.FullUriAddress);
         }
 
         /// <summary>
@@ -96,12 +98,12 @@ namespace System.Net.Rina
         {
             return FlowState.Open;
         }
-
+        List<Task> m_dataTransferTasks = new List<Task>();
         public Port AllocateFlow(FlowInformation flowInfo)
         {
             Address remoteAddress;
             IRinaIpc localipcp;
-            if (ResolveFlowAddress(flowInfo, out localipcp, out remoteAddress))
+            if (ResolveFlowAddress(flowInfo.DestinationAddress, out localipcp, out remoteAddress))
             {
                 var flowInfo2 = new FlowInformation()
                 {
@@ -117,10 +119,10 @@ namespace System.Net.Rina
 
                 var southPort = localipcp.AllocateFlow(flowInfo2);
                 var northPort = new Port(this, ++m_lastAllocatedPortId);
-                // TODO: implement linking these two portsthrough DTP and RMT:
-
-
-
+                var t = createDataTransferTask(northPort, southPort);
+                t.Start();
+                m_dataTransferTasks.Add(t);
+                return northPort;
             }
             return null;
         }
@@ -133,46 +135,22 @@ namespace System.Net.Rina
         /// <param name="localipcp"></param>
         /// <param name="remoteAddress"></param>
         /// <returns></returns>
-        private bool ResolveFlowAddress(FlowInformation flowInfo, out IRinaIpc localipcp, out Address remoteAddress)
+        private bool ResolveFlowAddress(Address targetAddress, out IRinaIpc localipcp, out Address remoteAddress)
         {
-            throw new NotImplementedException();
+            return Host.GetRemoteHostVector(new Address(m_config.DifUriAddress), targetAddress, out localipcp, out remoteAddress);
         }
 
-
-
-
-        bool m_southPortReaderRefreshNeeded = true;
         /// <summary>
         /// Worker just take care of all south ports utilized by the current IPCP. If there are some data avilable then 
         /// these data are sent to the dataflow processing pipeline. 
         /// </summary>
         void Worker()
         {
-            // TODO: Check if this does not lead to starvation.      
-            try
+            while (true)
             {
-                Task<bool>[] tasks = null;
-                while (true)
-                {
-                    if (tasks == null || m_southPortReaderRefreshNeeded)
-                    {
-                        tasks = m_southPortList.Select(x => x.Ipcp.DataAvailableAsync(x.Port)).ToArray();
-                        m_southPortReaderRefreshNeeded = false;
-                    }
-                    int index = Task.WaitAny(tasks);
-                    var port = m_southPortList[index].Port;
-                    byte[] buffer = port.Ipc.Receive(port);
-                    var sdu = new SduInternal(port, buffer, 0, buffer.Length);
-
-
-                    tasks[index] = m_southPortList[index].Ipcp.DataAvailableAsync(port);
-                }
+                Task.WaitAll(m_dataTransferTasks.ToArray(), 5000);
             }
-            catch (ThreadAbortException)
-            { }
         }
-
-
 
         internal class DataTransfer
         {
@@ -207,7 +185,7 @@ namespace System.Net.Rina
         /// <summary>
         /// Creates a DTP task for newly allocated flow.
         /// </summary>
-        async void createDataTransferTask(Port northPort, Port southPort)
+        async Task createDataTransferTask(Port northPort, Port southPort)
         {
             // creating blocks if the processing pipeline
             var delimiter = new SduDelimiter(1000);
@@ -229,12 +207,21 @@ namespace System.Net.Rina
             var dataTransferBlockNbound = new TransformManyBlock<PduInternal, PduInternal>(p => dataTransfer.ReceivePdu(p));
             var delimiterBlockNbound = new TransformManyBlock<PduInternal, SduInternal>(s => delimiter.Compose(s));
 
-            var receiver = ReceiveAsync(southPort, sduProtectionBlockNbound);
+            
             sduProtectionBlockNbound.LinkTo(dataTransferBlockNbound);
             dataTransferBlockNbound.LinkTo(delimiterBlockNbound);
             delimiterBlockNbound.LinkTo(m_northPortMap[northPort.Id].OutQueue);
+            await ReceiveAsync(southPort, sduProtectionBlockNbound);
+        }
 
-            await receiver;
+        /// <summary>
+        /// Creates a relay task.
+        /// </summary>
+        /// <param name="southPortIn"></param>
+        /// <param name="southPortOut"></param>
+        async void createDataRelayTask(Port southPortIn, Port southPortOut)
+        {
+            throw new NotImplementedException();
         }
 
         static async Task ReceiveAsync(Port southPort, ITargetBlock<SduInternal> target)
@@ -367,6 +354,41 @@ namespace System.Net.Rina
             }
             return false;
         }
+
+        #region IDisposable Support
+        private bool disposedValue = false; // To detect redundant calls
+
+        protected virtual void Dispose(bool disposing)
+        {
+            if (!disposedValue)
+            {
+                if (disposing)
+                {
+                    // TODO: dispose managed state (managed objects).          
+                }
+
+                // TODO: free unmanaged resources (unmanaged objects) and override a finalizer below.
+                // TODO: set large fields to null.
+
+                disposedValue = true;
+            }
+        }
+
+        // TODO: override a finalizer only if Dispose(bool disposing) above has code to free unmanaged resources. 
+        // ~IpcProcess() {
+        //   // Do not change this code. Put cleanup code in Dispose(bool disposing) above.
+        //   Dispose(false);
+        // }
+
+        // This code added to correctly implement the disposable pattern.
+        public void Dispose()
+        {
+            // Do not change this code. Put cleanup code in Dispose(bool disposing) above.
+            Dispose(true);
+            // TODO: uncomment the following line if the finalizer is overridden above.
+            // GC.SuppressFinalize(this);
+        }
+        #endregion
     }
 }
 

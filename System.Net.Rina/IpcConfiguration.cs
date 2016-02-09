@@ -29,7 +29,22 @@ namespace System.Net.Rina
     /// </summary>
 	public struct IpcConfiguration
 	{
-        public string LocalAddress { get; set; }    
+        /// <summary>
+        /// Represents a Dif address of the comfigured Ipcp.
+        /// </summary>
+        public string DifName { get; set; }
+        /// <summary>
+        /// Represents a local address of the configured Ipcp.
+        /// </summary>
+        public string HostName { get; set; }    
+
+        public Uri DifUriAddress {  get { return new Uri("rina://" + this.DifName); } }
+
+        public Uri HostUriAddress { get { return new Uri("/" + this.HostName, UriKind.Relative); } }
+        /// <summary>
+        /// Gets fully qualified name of the configured Ipcp.
+        /// </summary>
+        public Uri FullUriAddress {  get { return new Uri("rina://" + this.DifName + "/" + this.HostName); } }
 	}
 }
 
