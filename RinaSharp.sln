@@ -1,13 +1,15 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 14
-VisualStudioVersion = 14.0.22609.0
+VisualStudioVersion = 14.0.25420.1
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "System.Net.Rina", "System.Net.Rina\System.Net.Rina.csproj", "{6693EE92-2E48-4D8B-8CAB-043846B7CEE5}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Demo", "Demo", "{D1F93693-095C-44C4-983B-46396690BA47}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TimeService", "Demo\TimeServer\TimeService.csproj", "{87E8617D-351F-4AC1-8EB8-89C0A3055830}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TimeServiceClient", "Demo\TimeServiceClient\TimeServiceClient.csproj", "{B13AEE9B-8C16-42C7-808F-598B370CFCC1}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -23,12 +25,17 @@ Global
 		{87E8617D-351F-4AC1-8EB8-89C0A3055830}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{87E8617D-351F-4AC1-8EB8-89C0A3055830}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{87E8617D-351F-4AC1-8EB8-89C0A3055830}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B13AEE9B-8C16-42C7-808F-598B370CFCC1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B13AEE9B-8C16-42C7-808F-598B370CFCC1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B13AEE9B-8C16-42C7-808F-598B370CFCC1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B13AEE9B-8C16-42C7-808F-598B370CFCC1}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{87E8617D-351F-4AC1-8EB8-89C0A3055830} = {D1F93693-095C-44C4-983B-46396690BA47}
+		{B13AEE9B-8C16-42C7-808F-598B370CFCC1} = {D1F93693-095C-44C4-983B-46396690BA47}
 	EndGlobalSection
 	GlobalSection(MonoDevelopProperties) = preSolution
 		StartupItem = System.Net.Rina\System.Net.Rina.csproj

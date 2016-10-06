@@ -47,6 +47,7 @@
     <Compile Include="Internals\FifoStream.cs" />
     <Compile Include="Internals\MultiKeyDictionary.cs" />
     <Compile Include="IpcHost.cs" />
+    <Compile Include="Shims\NamedPipeIpcProcess.cs" />
     <Compile Include="Transport\DataTransferControlService.cs" />
     <Compile Include="Naming\StaticNameService.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
@@ -86,6 +87,6 @@
   <ItemGroup>
     <None Include="packages.config" />
     <None Include="RinaCore.cd" />
-    <Compile Include="Shims\ServiceIpcObject.cs" />
+    <Compile Include="Shims\WcfServiceIpcProcess.cs" />
   </ItemGroup>
 </Project>

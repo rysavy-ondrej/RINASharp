@@ -31,7 +31,7 @@ namespace System.Net.Rina
 	/// Flow information object describes parameters of the flow to be created 
 	/// between two end-points Ipc. 
 	/// </summary>
-	public struct FlowInformation
+	public class FlowInformation
 	{
 		public ApplicationNamingInfo SourceApplication; 
 		public ApplicationNamingInfo DestinationApplication; 

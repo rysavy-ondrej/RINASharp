@@ -153,13 +153,12 @@ namespace System.Net.Rina.Shims
     /// This is implementation of IpcProcess for ShimDif that employs WCF Service model.
     /// </summary>
     [ShimIpc("WcfServiceIpc")]
-    public class WcfServiceIpcProcess : IRinaIpc, IDisposable
+    public class WcfServiceIpcProcess : IRinaIpc
 	{
-        Object m_connectionEndpointsLock = new Object();
-        Object m_generalLock = new Object();
-        ulong m_lastAllocatedPortId = 0;
-        Thread m_IpcWorker;
-        ServiceHost m_serviceHost;
+        object _connectionEndpointsLock = new object();
+        object _generalLock = new object();
+        ulong _lastAllocatedPortId = 0;
+        ServiceHost _serviceHost;
 
         internal class ConnectionEndpoint
         {
@@ -197,12 +196,12 @@ namespace System.Net.Rina.Shims
         /// <summary>
         /// This maps the port id to connection endpoint object that maintains all necessary information for a flow.
         /// </summary>
-        MultiKeyDictionary<ulong, ulong, ConnectionEndpoint> m_ConnectionEndpoints = new MultiKeyDictionary<ulong, ulong, ConnectionEndpoint>();
+        MultiKeyDictionary<ulong, ulong, ConnectionEndpoint> _ConnectionEndpoints = new MultiKeyDictionary<ulong, ulong, ConnectionEndpoint>();
 
         /// <summary>
         /// Collection all registered applications and their request handlers.
         /// </summary>
-        List<RegisteredApplication> m_registeredApplications = new List<RegisteredApplication>();
+        List<RegisteredApplication> _registeredApplications = new List<RegisteredApplication>();
         /// <summary>
         /// Maps flow ids to receive buffer objects.
         /// </summary>
@@ -210,45 +209,18 @@ namespace System.Net.Rina.Shims
 
         public Address LocalAddress { get; private set; }
 
-        /// <summary>
-        /// Provides access to working thread. 
-        /// </summary>
-        public Thread Worker {  get { return this.m_IpcWorker; } }
-
         public static WcfServiceIpcProcess Create(string localAddress)
         {
             try
             {
                 var ipc = new WcfServiceIpcProcess(localAddress);
-                ipc.m_IpcWorker = new Thread(ipc.Run);
-                ipc.m_IpcWorker.Start();
                 return ipc;
             }
             catch(AddressAlreadyInUseException e)
             {
-                var info = String.Format("Address already in use: {0}", e.Message);
-                Trace.WriteLine(info, "ERROR");
-                return null;
+                Trace.WriteLine($"Address already in use: {e.Message}", "ERROR");
+                throw new AddressAlreadyInUseException($"specified address '{Address.FromWinIpcPort(localAddress)}' is unavailable because it is already in use.");
             }
-        }
-
-        /// <summary>
-        /// A main loop of this IPC. This loop mamages the IPC. It detect inactive connections 
-        /// and cleans up unused resources.
-        /// </summary>
-        void Run()
-        {
-            try {
-                
-                while (true)
-                {
-                    Thread.Sleep(5000);
-                    var info = String.Format("{0}: Flow count {1}", DateTime.Now,m_ConnectionEndpoints.Count);
-                    Trace.WriteLine(info, "INFO");
-                }
-            }
-            catch(ThreadAbortException)
-            { }
         }
 
         /// <summary>
@@ -259,9 +231,9 @@ namespace System.Net.Rina.Shims
         {
             LocalAddress = Address.FromWinIpcPort(localAddress);
             // create server side of channel...
-            m_serviceHost = new ServiceHost(new RemoteObject(this), new Uri[]{new Uri((string)this.LocalAddress.Value)});
-            m_serviceHost.AddServiceEndpoint(typeof(IRemoteObject), new NetNamedPipeBinding(), typeof(RemoteObject).ToString());
-            m_serviceHost.Open();                        
+            _serviceHost = new ServiceHost(new RemoteObject(this), new Uri[]{new Uri((string)this.LocalAddress.Value)});
+            _serviceHost.AddServiceEndpoint(typeof(IRemoteObject), new NetNamedPipeBinding(), typeof(RemoteObject).ToString());
+            _serviceHost.Open();                        
         }
 
         /// <summary>
@@ -272,7 +244,7 @@ namespace System.Net.Rina.Shims
         /// <returns>The Port object associated with newly allocated flow.</returns>
         private bool allocateFlow(FlowInformation flowInformation, out ConnectionEndpoint cep)
         {
-            var port = new Port(this, ++m_lastAllocatedPortId);
+            var port = new Port(this, ++_lastAllocatedPortId);
             var localAddress = (string)this.LocalAddress.Value;
             var remoteAddres = (string)flowInformation.DestinationAddress.Value;
             // connect to the target IPC:
@@ -298,7 +270,7 @@ namespace System.Net.Rina.Shims
             /// <returns>The Port object that can be used for communication with remote party.</returns>
         public Port AllocateFlow (FlowInformation flowInformation)
 		{
-            lock(m_connectionEndpointsLock)
+            lock(_connectionEndpointsLock)
             {
                 var wipcPortname = (string)flowInformation.DestinationAddress.Value;              
                 ConnectionEndpoint cep = null;
@@ -325,12 +297,12 @@ namespace System.Net.Rina.Shims
                     }
                     catch (Exception e)
                     {
-                        Trace.WriteLine("Could not connect remote site: s" + e.Message, "ERROR");
+                        Trace.WriteLine($"Could not connect to remote site: {e.Message}", "ERROR");
                     }
                     if (cepId > 0)
                     {
                         cep.ConnectionId = cepId;
-                        m_ConnectionEndpoints.Add(cep.Port.Id, cep.ConnectionId, cep);
+                        _ConnectionEndpoints.Add(cep.Port.Id, cep.ConnectionId, cep);
                         return cep.Port;
                     }
                 }
@@ -346,14 +318,14 @@ namespace System.Net.Rina.Shims
         /// <returns></returns>
         internal Port AllocateFlow(ConnectionInformation connInfo)
         {
-            lock(m_connectionEndpointsLock)
+            lock(_connectionEndpointsLock)
             {
                 var flowInformation = connInfo.Reverse().GetFlowInformation();
                 ConnectionEndpoint cep = null;
                 if (allocateFlow(flowInformation, out cep))
                 {
                     cep.ConnectionId = cep.Port.Id;                  
-                    m_ConnectionEndpoints.Add(cep.Port.Id, cep.ConnectionId, cep);
+                    _ConnectionEndpoints.Add(cep.Port.Id, cep.ConnectionId, cep);
                     return cep.Port;
                 }
                 return null;
@@ -362,14 +334,14 @@ namespace System.Net.Rina.Shims
 
 		public void DeallocateFlow (Port port)
 		{
-            lock(m_connectionEndpointsLock)
+            lock(_connectionEndpointsLock)
             {
                 ConnectionEndpoint cep;
-                if (m_ConnectionEndpoints.TryGetValue(primaryKey: port.Id, val: out cep))
+                if (_ConnectionEndpoints.TryGetValue(primaryKey: port.Id, val: out cep))
                 {
                     cep.CommunicationObject.Close();
                     cep.ReceiveBuffer.Dispose();
-                    m_ConnectionEndpoints.Remove(primaryKey: port.Id);
+                    _ConnectionEndpoints.Remove(primaryKey: port.Id);
                 }
             }
         }
@@ -377,7 +349,7 @@ namespace System.Net.Rina.Shims
         public int Send(Port port, byte[] buffer, int offset, int count)
         {
             ConnectionEndpoint cep;
-            if (m_ConnectionEndpoints.TryGetValue(primaryKey: port.Id, val: out cep))
+            if (_ConnectionEndpoints.TryGetValue(primaryKey: port.Id, val: out cep))
             {                
                 var dataToSent = new byte[count];
                 Buffer.BlockCopy(buffer, offset, dataToSent, 0, count);
@@ -390,7 +362,7 @@ namespace System.Net.Rina.Shims
 		public byte[] Receive (Port port)
 		{
             ConnectionEndpoint cep;
-            if (m_ConnectionEndpoints.TryGetValue(primaryKey: port.Id, val: out cep))
+            if (_ConnectionEndpoints.TryGetValue(primaryKey: port.Id, val: out cep))
             {
                 var data = cep.ReceiveBuffer;
                 if (port.Blocking) data.WaitForData(Timeout.Infinite);
@@ -404,55 +376,75 @@ namespace System.Net.Rina.Shims
 
 		public void RegisterApplication (ApplicationNamingInfo appInfo, ConnectionRequestHandler reqHandler)
 		{
-            lock(m_generalLock)
+            lock(_generalLock)
             {
                 var info = String.Format("Application '{0}' registered.", appInfo.ProcessName);
                 Trace.WriteLine(info, "INFO");
-                this.m_registeredApplications.Add(new RegisteredApplication() { ApplicationInfo = appInfo, Handler = reqHandler });
+                this._registeredApplications.Add(new RegisteredApplication() { ApplicationInfo = appInfo, RequestHandler = reqHandler });
             }
 		}
 
         public void DeregisterApplication(ApplicationNamingInfo appInfo)
         {
-            lock(m_generalLock)
+            lock(_generalLock)
             {
-                this.m_registeredApplications.RemoveAll(x =>
+                this._registeredApplications.RemoveAll(x =>
                 {
                     return appInfo.Matches(x.ApplicationInfo);
                 });
             }
         }
 
-        internal ulong ConnectToApplication(ConnectionInformation connectionInformation)
+        /// <summary>
+        /// Connects flow to the registered application IPC. Application can refuse the connection or provide a handler for
+        /// serving the requests. 
+        /// </summary>
+        /// <param name="connectionInformation">ConnectionInformation with hold properties of a new connection requested by the client side.</param>
+        /// <returns>A <see cref="Port"/> newly created for the communication.</returns>
+        internal Port ConnectToApplication(ConnectionInformation connectionInformation)
         {
-            lock(m_generalLock)
+            lock(_generalLock)
             {
-                var info = String.Format("Connection request to application '{0}'.", connectionInformation.DestinationProcessName);
-                Trace.WriteLine(info, "INFO");
+                Trace.WriteLine($"Connection request to application '{connectionInformation.DestinationProcessName}'.", "INFO");
 
-                var app = m_registeredApplications.Find(r => { return r.ApplicationInfo.ProcessName.Equals(connectionInformation.DestinationProcessName, StringComparison.InvariantCultureIgnoreCase); });
+                var app = _registeredApplications.Find(r => { return r.ApplicationInfo.ProcessName.Equals(connectionInformation.DestinationProcessName, StringComparison.InvariantCultureIgnoreCase); });
                 if (app != null)
                 {
-                    AcceptFlowHandler afh = null;
+                    AcceptFlowHandler flowHandler = null;
                     var flowInfo = connectionInformation.Reverse().GetFlowInformation();
-                    var reply = app.Handler(this, flowInfo, out afh);
-                    info = String.Format("Request handler of application '{0}' replied {1}.", connectionInformation.DestinationProcessName, reply.ToString());
-                    Trace.WriteLine(info, "INFO");
+                    var reply = ConnectionRequestResult.Reject;
+                    try
+                    {
+                        reply = app.RequestHandler(this, flowInfo, out flowHandler);
+                    }
+                    catch(Exception e)
+                    {
+                        Trace.WriteLine($"RequestHandler method of {app.ApplicationInfo.ProcessName}:{e.Message}", "ERROR");
+                    }
+                    Trace.WriteLine($"Request handler of application '{connectionInformation.DestinationProcessName}' replied {reply}.", "INFO");
                     if (reply == ConnectionRequestResult.Accept)
                     {
                         // now it is the right time to create all the object necessary for further communication:
-                        var port = this.AllocateFlow(connectionInformation);
-                        afh(this, flowInfo, port);
-                        return port.Id;
+                        var port = AllocateFlow(connectionInformation);
+
+                        // excutes the handler on newly created Task
+                        // this taks is running on its own...                   
+                        Task.Run(async () => 
+                        {
+                            try { await flowHandler(this, flowInfo, port); }
+                            catch (Exception e) { Trace.WriteLine($"FlowHandler method of {app.ApplicationInfo.ProcessName}: {e.Message}", "ERROR"); }
+
+                        }).ConfigureAwait(false);
+
+                        return port;
                     }
                     else
-                        return 0;
+                        return null;
                 }
                 else
                 {
-                    info = String.Format("Application '{0}' not found in local IPC.", connectionInformation.DestinationProcessName);
-                    Trace.WriteLine(info, "ERROR");
-                    return 0;
+                    Trace.WriteLine($"Application '{connectionInformation.DestinationProcessName}' not found in local IPC.", "ERROR");
+                    return null;
                 }
             }
         }
@@ -462,7 +454,7 @@ namespace System.Net.Rina.Shims
             if (port == null) throw new ArgumentNullException("port");
             PortInformationOptions opt = 0;
             ConnectionEndpoint cep;
-            if (m_ConnectionEndpoints.TryGetValue(primaryKey:port.Id, val: out cep))
+            if (_ConnectionEndpoints.TryGetValue(primaryKey:port.Id, val: out cep))
             {
                 opt |= cep.CommunicationObject.State == CommunicationState.Opened ? PortInformationOptions.Connected : 0;
                 opt |= cep.Blocking ? 0 :  PortInformationOptions.NonBlocking;
@@ -470,49 +462,33 @@ namespace System.Net.Rina.Shims
             return opt;
         }
 
-        private bool m_disposedValue = false; // To detect redundant calls
-        private object m_disposeLock = new object();
+        private bool _disposedValue = false; // To detect redundant calls
+        private object _disposeLock = new object();
         protected virtual void Dispose(bool disposing) 
         {
-            lock(m_disposeLock)
+            lock(_disposeLock)
             {
-                if (!m_disposedValue)
+                if (!_disposedValue)
                 {
                     if (disposing)
                     {
-                        var info = String.Format("Shutting down worker thread '{0}'.", this.m_IpcWorker.ManagedThreadId);
-                        Trace.WriteLine(info, "INFO");
-
-                        this.m_IpcWorker.Abort();
-
-                        info = String.Format("Waiting for thread '{0}' to finish.", this.m_IpcWorker.ManagedThreadId);
-                        Trace.WriteLine(info, "INFO");
-
-                        this.m_IpcWorker.Join();
-
-                        info = String.Format("Thread '{0}' finished. Disposing managed resources of the current IPC.", this.m_IpcWorker.ManagedThreadId);
-                        Trace.WriteLine(info, "INFO");
-
                         closeServiceHost();
-
-                        info = String.Format("IPC disposed.");
-                        Trace.WriteLine(info, "INFO");
+                        Trace.WriteLine("IPC disposed.", "INFO");
                     }
 
-                    this.m_registeredApplications = null;
-                    this.m_ConnectionEndpoints.Clear();
-                    m_disposedValue = true;
+                    this._registeredApplications = null;
+                    this._ConnectionEndpoints.Clear();
+                    _disposedValue = true;
                 }
             }
         }
         
         private void closeServiceHost()
         {
-            if (m_serviceHost.State == CommunicationState.Opened)
-            {
-                var info = String.Format("Closing IPC service host (State='{0}').", this.m_serviceHost.State);
-                Trace.WriteLine(info, "INFO");
-                foreach (var x in m_ConnectionEndpoints)
+            if (_serviceHost.State == CommunicationState.Opened)
+            {                
+                Trace.WriteLine($"Closing IPC service host (State='{this._serviceHost.State}').", "INFO");
+                foreach (var x in _ConnectionEndpoints)
                 {
                     var cep = x.Value;                                        
                     try {
@@ -520,13 +496,11 @@ namespace System.Net.Rina.Shims
                         cep.CommunicationObject.Close();
                     } catch (Exception)
                     {
-                        info = String.Format("Remote site is not available (Address='{0}', Application='{1}').", 
-                            cep.FlowInformation.DestinationAddress, cep.FlowInformation.DestinationApplication, cep.ConnectionId);
-                        Trace.WriteLine(info, "INFO");
+                        Trace.WriteLine($"Remote site is not available (Address='{cep.FlowInformation.DestinationAddress}', Application='{cep.FlowInformation.DestinationApplication}').", "INFO");
                     }                
                 }
             }
-            m_serviceHost.Close();            
+            _serviceHost.Close();            
         }
 
         // This code added to correctly implement the disposable pattern.
@@ -537,10 +511,10 @@ namespace System.Net.Rina.Shims
 
         public void SetBlocking(Port port, bool value)
         {
-            lock(m_connectionEndpointsLock)
+            lock(_connectionEndpointsLock)
             {
                 ConnectionEndpoint cep;
-                if (m_ConnectionEndpoints.TryGetValue(primaryKey: port.Id, val: out cep))
+                if (_ConnectionEndpoints.TryGetValue(primaryKey: port.Id, val: out cep))
                 {
                     cep.Blocking = value;                
                 }
@@ -550,7 +524,7 @@ namespace System.Net.Rina.Shims
         public int AvailableData(Port port)
         {
             ConnectionEndpoint cep;
-            if (m_ConnectionEndpoints.TryGetValue(primaryKey: port.Id, val: out cep))
+            if (_ConnectionEndpoints.TryGetValue(primaryKey: port.Id, val: out cep))
             {
                 return cep.ReceiveBuffer.AvailableBytes;
             }
@@ -565,7 +539,7 @@ namespace System.Net.Rina.Shims
         public bool DataAvailable(Port port)
         {
             ConnectionEndpoint cep;
-            if (m_ConnectionEndpoints.TryGetValue(primaryKey: port.Id, val: out cep))
+            if (_ConnectionEndpoints.TryGetValue(primaryKey: port.Id, val: out cep))
             {
                 return cep.ReceiveBuffer.AvailableBytes != 0;
             }
@@ -577,7 +551,7 @@ namespace System.Net.Rina.Shims
         internal class RegisteredApplication
         {
             internal ApplicationNamingInfo ApplicationInfo;
-            internal ConnectionRequestHandler Handler;
+            internal ConnectionRequestHandler RequestHandler;
         }
 
         /// <summary>
@@ -614,7 +588,7 @@ namespace System.Net.Rina.Shims
                 var preInfo = String.Format("Open connection request ('{0}'<->'{1}').", connectionInformation.SourceAddress, connectionInformation.DestinationAddress);
                 Trace.WriteLine(preInfo, "INFO");
 
-                return this._parentObject.ConnectToApplication(connectionInformation);
+                return (ulong)this._parentObject.ConnectToApplication(connectionInformation)?.Id;
             }
 
             public byte[] PullData(ulong connectionId, int count)
@@ -628,7 +602,7 @@ namespace System.Net.Rina.Shims
                 Trace.WriteLine(info, "INFO");
 
                 ConnectionEndpoint cep;
-                if (_parentObject.m_ConnectionEndpoints.TryGetValue(subKey: connectionId, val: out cep))
+                if (_parentObject._ConnectionEndpoints.TryGetValue(subKey: connectionId, val: out cep))
                 {
                     var recvBuffer = cep.ReceiveBuffer;
                     recvBuffer.Write(data, 0, data.Length);

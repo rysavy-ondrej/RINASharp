@@ -20,8 +20,6 @@
 //  along with this program; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 //
-using System;
-
 namespace System.Net.Rina
 {
 	/// <summary>
@@ -68,44 +66,55 @@ namespace System.Net.Rina
 	}
 	/// <summary>
 	/// Represents a generic address that can be used in RINA for addressing DIF nodes. Each context should have defined 
-    /// address scheme. 
+    /// address scheme. Currently the address only supports families defined by <see cref="AddressFamily"/> enumerations.
 	/// </summary>
 	public class Address
 	{
+        /// <summary>
+        /// Address family.
+        /// </summary>
 		AddressFamily _family;
+        /// <summary>
+        /// Address content. 
+        /// </summary>
 		object _data;
 
-        byte[] buffer;
+        byte[] _buffer;
         byte[] getBuffer()
         {
-            if (buffer==null)
+            if (_buffer==null)
             {
                 switch(this._family)
                 {
                     case AddressFamily.WinIpc:
-                        buffer = Text.ASCIIEncoding.ASCII.GetBytes(((string)_data).ToString());
+                        _buffer = Text.ASCIIEncoding.ASCII.GetBytes(((string)_data).ToString());
                         break;
                     case AddressFamily.Uri:
-                        buffer = Text.ASCIIEncoding.ASCII.GetBytes(((Uri)_data).ToString());
+                        _buffer = Text.ASCIIEncoding.ASCII.GetBytes(((Uri)_data).ToString());
                         break;
                     case AddressFamily.InterNetwork:
                     case AddressFamily.InterNetworkV6:
-                        buffer = ((IPAddress)_data).GetAddressBytes();
+                        _buffer = ((IPAddress)_data).GetAddressBytes();
                         break;
                     case AddressFamily.Generic:
                     case AddressFamily.Mac:
-                        buffer = (byte[])_data;
+                        _buffer = (byte[])_data;
                         break;
                 }
             }
-            return buffer;
+            return _buffer;
         }
 
 		public byte this[int offset] 
 		{
-            get { return this.getBuffer()[offset]; }
+            get { return getBuffer()[offset]; }
 		}
 
+        /// <summary>
+        /// Creates a new <see cref="System.Net.Rina.Address"/> object for the specified AddressFamily and address value represented as byte array.
+        /// </summary>
+        /// <param name="family">An AddressFamily representing the kind of address.</param>
+        /// <param name="rawAddress">Byte array representing raw address of the given AddressFamily.</param>
 		public Address (AddressFamily family, byte []rawAddress)
 		{
 			this._family = family;
@@ -114,16 +123,21 @@ namespace System.Net.Rina
 
         private Address ()
         { }
-		/// <summary>
-		/// Initializes a new instance of the <see cref="System.Net.Rina.Address"/> class using provided IPAddress.
-		/// </summary>
-		/// <param name="address">Address.</param>
-		public Address (IPAddress address)
+        /// <summary>
+        /// Initializes a new instance of the <see cref="System.Net.Rina.Address"/> class using provided IPAddress.
+        /// </summary>
+        /// <param name="address">An IPAddress value used to create <see cref="System.Net.Rina.Address"/>.</param>
+        public Address (IPAddress address)
 		{
 			this._family = (AddressFamily)address.AddressFamily;
             this._data = address;
 		}
 
+
+        /// <summary>
+        /// Creates a new instance of <see cref="System.Net.Rina.Address"/> class using <see cref="System.Uri"/> as the underlaying address. 
+        /// </summary>
+        /// <param name="uri">An instance of <see cref="System.Uri"/> representing the address. </param>
         public Address (Uri uri)
         {
             this._family = AddressFamily.Uri;
@@ -131,7 +145,7 @@ namespace System.Net.Rina
         }
 
         /// <summary>
-        /// Creates Address from portName string. Address string then looks like 'net.pipe://localhost/portName'.
+        /// Creates  <see cref="System.Net.Rina.Address"/> from <see cref="portName"/> string. Address string then looks like 'net.pipe://localhost/portName'.
         /// </summary>
         /// <param name="portName">A name of local IPC port used for creating IPC connection address.</param>
         /// <returns></returns>
@@ -172,10 +186,8 @@ namespace System.Net.Rina
             return new Address(macBytes) { _family = AddressFamily.Mac };
         }
 
-        
-
 		/// <summary>
-		/// Gets the AddressFamily enumerated value of the current Address.
+		/// Gets the <see cref="AddressFamily"/>  AddressFamily enumerated value of the current Address.
 		/// </summary>
 		/// <value>The family.</value>
 		public AddressFamily Family { get { return this._family; } }
@@ -208,6 +220,11 @@ namespace System.Net.Rina
             }
         }
 
+        /// <summary>
+        /// Gets the string representation of byte array. The C# syntax is used to represent the byte array.
+        /// </summary>
+        /// <param name="bytes">An input byte array to represents as string.</param>
+        /// <returns>A string representation of byte array.</returns>
         public static string ByteArrayToString(byte[] bytes)
         {
             var sb = new Text.StringBuilder("new byte[] { ");

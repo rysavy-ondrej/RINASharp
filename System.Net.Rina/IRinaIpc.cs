@@ -48,11 +48,11 @@ namespace System.Net.Rina
     /// <param name="context">The IpcContext object which manages the communication.</param>
     /// <param name="flowInformation">The flow information describing communicaton parties.</param>
     /// <param name="port">The port object used to communication with other end point.</param>
-    public delegate void AcceptFlowHandler(IRinaIpc context, FlowInformation flowInformation, Port port);
+    public delegate Task AcceptFlowHandler(IRinaIpc context, FlowInformation flowInformation, Port port);
 	/// <summary>
 	/// This interface represents basic IPC API.
 	/// </summary>
-	public interface IRinaIpc {
+	public interface IRinaIpc : IDisposable {
 
 		Address LocalAddress { get; }
 

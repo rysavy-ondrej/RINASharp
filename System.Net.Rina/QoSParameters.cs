@@ -27,7 +27,7 @@ namespace System.Net.Rina
 	/// <summary>
 	/// This represents QoS constraints that the application may impose on connection.
 	/// </summary>
-	public struct QosParameters
+	public class QosParameters
 	{
 	}
 }

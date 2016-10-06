@@ -1,5 +1,5 @@
 ﻿//
-//  IpcManager.cs
+//  IpcProcess.cs
 //
 //  Author:
 //       Ondrej Rysavy <rysavy@fit.vutbr.cz>
@@ -20,21 +20,17 @@
 //  along with this program; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 //
-using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Net.Rina.DataUnits;
-using System.Threading;
 using System.Threading.Tasks;
 using System.Threading.Tasks.Dataflow;
-using System.Linq;
 namespace System.Net.Rina
 {
     /// <summary>
-    /// This is generic IPCProcess class that manages all IPC in the current domain. This is the central class in the 
+    /// This is generic IPCProcess class that manages all IPC instances in the current domain. This is the central class in the 
     /// architecture as it controls all communication in the RINA DIF. It also includes Flow Allocator.
     /// </summary>
-    public class IpcProcess : IRinaIpc, IDisposable
+    public class IpcProcess : IRinaIpc
     {
         /// <summary>
         /// This internal class maintains information about Ports of supporting IPCPs, e.g.,
@@ -70,35 +66,35 @@ namespace System.Net.Rina
         }
 
 
-        IpcConfiguration m_config;
-        ResourceInformationManager m_rim;
-        Address localAddress;
+        IpcConfiguration _config;
+        ResourceInformationManager _rim;
+        Address _localAddress;
 
-        Dictionary<ulong, NorthPortController> m_northPortMap = new Dictionary<ulong, NorthPortController>();
-        List<SouthPortWrapper> m_southPortList = new List<SouthPortWrapper>();
+        Dictionary<ulong, NorthPortController> _northPortMap = new Dictionary<ulong, NorthPortController>();
+        List<SouthPortWrapper> _southPortList = new List<SouthPortWrapper>();
 
         public IpcHost Host { get; private set; }
-        private ulong m_lastAllocatedPortId;
+        private ulong _lastAllocatedPortId;
 
         public IpcProcess(IpcHost ipcHost, IpcConfiguration config, ResourceInformationManager rim)
         {
             Host = ipcHost;
-            m_config = config;
-            m_rim = rim;
-            localAddress = new Address(config.FullUriAddress);
+            _config = config;
+            _rim = rim;
+            _localAddress = new Address(config.FullUriAddress);
         }
 
         /// <summary>
-        /// Represents
+        /// Represents a local ddress of the current IPCProcess.
         /// </summary>
-        public Address LocalAddress { get { return this.localAddress; } }
+        public Address LocalAddress { get { return this._localAddress; } }
 
 
         public FlowState GetFlowState(Port port)
         {
             return FlowState.Open;
         }
-        List<Task> m_dataTransferTasks = new List<Task>();
+        List<Task> _dataTransferTasks = new List<Task>();
         public Port AllocateFlow(FlowInformation flowInfo)
         {
             Address remoteAddress;
@@ -118,10 +114,10 @@ namespace System.Net.Rina
                 };
 
                 var southPort = localipcp.AllocateFlow(flowInfo2);
-                var northPort = new Port(this, ++m_lastAllocatedPortId);
+                var northPort = new Port(this, ++_lastAllocatedPortId);
                 var t = createDataTransferTask(northPort, southPort);
                 t.Start();
-                m_dataTransferTasks.Add(t);
+                _dataTransferTasks.Add(t);
                 return northPort;
             }
             return null;
@@ -137,18 +133,18 @@ namespace System.Net.Rina
         /// <returns></returns>
         private bool ResolveFlowAddress(Address targetAddress, out IRinaIpc localipcp, out Address remoteAddress)
         {
-            return Host.GetRemoteHostVector(new Address(m_config.DifUriAddress), targetAddress, out localipcp, out remoteAddress);
+            return Host.GetRemoteHostVector(new Address(_config.DifUriAddress), targetAddress, out localipcp, out remoteAddress);
         }
 
         /// <summary>
-        /// Worker just take care of all south ports utilized by the current IPCP. If there are some data avilable then 
+        /// Worker just take care of all south ports utilized by the current IPCP. If there are some data available then 
         /// these data are sent to the dataflow processing pipeline. 
         /// </summary>
         void Worker()
         {
             while (true)
             {
-                Task.WaitAll(m_dataTransferTasks.ToArray(), 5000);
+                Task.WaitAll(_dataTransferTasks.ToArray(), 5000);
             }
         }
 
@@ -197,7 +193,7 @@ namespace System.Net.Rina
             var dataTransferBlockSbound = new TransformBlock<PduInternal, PduInternal>(p => dataTransfer.SendPdu(p));
             var sduProtectionBlockSbound = new TransformBlock<PduInternal, SduInternal>(p => sduProtection.Protect(p));  
                       
-            m_northPortMap[northPort.Id].InQueue.LinkTo(delimiterBlockSbound);
+            _northPortMap[northPort.Id].InQueue.LinkTo(delimiterBlockSbound);
             delimiterBlockSbound.LinkTo(dataTransferBlockSbound);
             dataTransferBlockSbound.LinkTo(sduProtectionBlockSbound);
             sduProtectionBlockSbound.LinkTo(new ActionBlock<SduInternal>(s => southPort.Send(s.UserData.Bytes, s.UserData.Offset, s.UserData.Length)));
@@ -210,7 +206,7 @@ namespace System.Net.Rina
             
             sduProtectionBlockNbound.LinkTo(dataTransferBlockNbound);
             dataTransferBlockNbound.LinkTo(delimiterBlockNbound);
-            delimiterBlockNbound.LinkTo(m_northPortMap[northPort.Id].OutQueue);
+            delimiterBlockNbound.LinkTo(_northPortMap[northPort.Id].OutQueue);
             await ReceiveAsync(southPort, sduProtectionBlockNbound);
         }
 
@@ -291,7 +287,7 @@ namespace System.Net.Rina
 
 		public void RegisterApplication (ApplicationNamingInfo appInfo, ConnectionRequestHandler reqHandler)
 		{
-			this.m_rim.SetValue (ResourceClass.ApplicationNames, appInfo.ProcessName, appInfo.EntityName, this.LocalAddress);
+			this._rim.SetValue (ResourceClass.ApplicationNames, appInfo.ProcessName, appInfo.EntityName, this.LocalAddress);
 		}
 
 		public void DeregisterApplication (ApplicationNamingInfo appInfo)
@@ -306,7 +302,7 @@ namespace System.Net.Rina
             // This implies that the API must allow a zero-length SDU and not “optimize” it out of existence. 
             var sdudata = new SduInternal(port, buffer, offset, size);
             NorthPortController pi;
-            if (m_northPortMap.TryGetValue(port.Id, out pi))
+            if (_northPortMap.TryGetValue(port.Id, out pi))
             {
                 pi.InQueue.Post(sdudata);
                 return size;
@@ -317,7 +313,7 @@ namespace System.Net.Rina
         public byte[] Receive(Port port)
         {
             NorthPortController pi;
-            if (m_northPortMap.TryGetValue(port.Id, out pi))
+            if (_northPortMap.TryGetValue(port.Id, out pi))
             {
                 var sdu = pi.InQueue.Receive();
                 return sdu.UserData.ActualBytes();
@@ -338,7 +334,7 @@ namespace System.Net.Rina
         public Task<bool> DataAvailableAsync(Port port)
         {
             NorthPortController pi;
-            if (m_northPortMap.TryGetValue(port.Id, out pi))
+            if (_northPortMap.TryGetValue(port.Id, out pi))
             {
                 return pi.InQueue.OutputAvailableAsync();
             }
@@ -348,7 +344,7 @@ namespace System.Net.Rina
         public bool DataAvailable(Port port)
         {
             NorthPortController pi;
-            if (m_northPortMap.TryGetValue(port.Id, out pi))
+            if (_northPortMap.TryGetValue(port.Id, out pi))
             {
                 return pi.InQueue.Count != 0;
             }

@@ -27,21 +27,29 @@ namespace System.Net.Rina.Naming
 {
 
 	/// <summary>
-	/// This process maintains identifiers within the current DIF.
+	/// This is an abstract class of nameing services that is supposed to maintain names within a single DIF. 
+    /// The realization may depend on the architecture of name system. It may be as simple as a static 
+    /// database replicated at all nodes as well as represented by the complex distributed naming system. 
 	/// </summary>
 	public abstract class NameService : ApplicationEntity
 	{
-		public NameService () : base("ManagementService","1","NameServiceProtocol","1")
-		{
-		}
+		protected NameService () : base("ManagementService","1","NameServiceProtocol","1") {  }
 
+        /// <summary>
+        /// Gets <see cref="IpcLocationVector"/> array for the specified Application Process Name and Application Entity Name.
+        /// </summary>
+        /// <param name="applicationProcessName">A string value representing Application Process Name.</param>
+        /// <param name="applicationEntityName">A string value representing Application Entity Name.</param>
+        /// <returns>An array of <see cref="IpcLocationVector"/> object containting the address of APN/AEN or null if no record for APN/AEN was found.</returns>
 		public abstract IpcLocationVector[] GetApplicationAddresses(string applicationProcessName, string applicationEntityName);
 
-
-        public virtual Task<IpcLocationVector[]> GetApplicationAddressesAsync(string applicationProcessName, string applicationEntityName)
-        {
-            return Task<IpcLocationVector[]>.Run(() => { return this.GetApplicationAddresses(applicationProcessName, applicationEntityName); });
-        }
+        /// <summary>
+        /// Gets <see cref="IpcLocationVector"/> for the specified Application Process Name and Application Entity Name.
+        /// </summary>
+        /// <param name="applicationProcessName">A string value representing Application Process Name.</param>
+        /// <param name="applicationEntityName">A string value representing Application Entity Name.</param>
+        /// <returns><see cref="IpcLocationVector"/> containting the address of APN/AEN or null if APN/AEN cannot be found.</returns>
+        public abstract Task<IpcLocationVector[]> GetApplicationAddressesAsync(string applicationProcessName, string applicationEntityName);
 	}
 }
 
