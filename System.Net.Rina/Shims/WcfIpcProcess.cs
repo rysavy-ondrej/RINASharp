@@ -98,8 +98,8 @@ namespace System.Net.Rina.Shims
         {
             var flowInfo = new FlowInformation()
             {
-                SourceAddress = Address.FromWinIpcString(this.SourceAddress),
-                DestinationAddress = Address.FromWinIpcString(this.DestinationAddress),
+                SourceAddress = new Address(new Uri(this.SourceAddress)),
+                DestinationAddress = new Address(new Uri(this.DestinationAddress)),
                 SourceApplication = new ApplicationNamingInfo(this.SourceProcessName, this.SourceProcessInstance, this.SourceEntityName, this.SourceEntityInstance),
                 DestinationApplication = new ApplicationNamingInfo(this.DestinationProcessName, this.DestinationProcessInstance, this.DestinationEntityName, this.DestinationEntityInstance)
             };
@@ -116,7 +116,7 @@ namespace System.Net.Rina.Shims
         /// <summary>
         /// Pushes data to the target object. 
         /// </summary>
-        /// <param name="connectionId">Id of connection associated with this opertation.</param>
+        /// <param name="connectionId">Id of connection associated with this operation.</param>
         /// <param name="data">A buffer with data to be pushed to the remote site.</param>
         /// <return>Number of bytes accepted from the provided buffer.</return>
         [OperationContract]
@@ -124,7 +124,7 @@ namespace System.Net.Rina.Shims
         /// <summary>
         /// Attempts to pull data from remote site.
         /// </summary>
-        /// <param name="connectionId">Id of connection associated with this opertation.</param>
+        /// <param name="connectionId">Id of connection associated with this operation.</param>
         /// <param name="count">A number of bytes to get from the remote object.</param>
         /// <returns>A buffer with data. The size of this buffer is at most <c>count</c> bytes.</returns>
         [OperationContract]
@@ -134,14 +134,14 @@ namespace System.Net.Rina.Shims
         /// Request a flow allocation.
         /// </summary>
         /// <param name="flowInfo">Information about flow.</param>
-        /// <returns>A value that can be used as a connection Id for futher operations.</returns>
+        /// <returns>A value that can be used as a connection Id for further operations.</returns>
         [OperationContract]
         UInt64 OpenConnection(ConnectionInformation flowInfo);
 
         /// <summary>
         /// Closes the flow with the specified connection id.
         /// </summary>
-        /// <param name="connectionId">>Id of connection associated with this opertation.</param>
+        /// <param name="connectionId">>Id of connection associated with this operation.</param>
         [OperationContract]
         void CloseConnection(UInt64 connectionId);
     }
@@ -152,8 +152,8 @@ namespace System.Net.Rina.Shims
     /// <summary>
     /// This is implementation of IpcProcess for ShimDif that employs WCF Service model.
     /// </summary>
-    [ShimIpc("WcfServiceIpc")]
-    public class WcfServiceIpcProcess : IRinaIpc
+    [ShimIpc("WcfService")]
+    public class WcfIpcProcess : IRinaIpc
 	{
         object _connectionEndpointsLock = new object();
         object _generalLock = new object();
@@ -176,7 +176,7 @@ namespace System.Net.Rina.Shims
             internal FlowInformation FlowInformation;
             /// <summary>
             /// Connection Id is used to resolve to which connection data should be written as 
-            /// rmeote object is create as a singleton. Connection Id is set to PortId of the "server".
+            /// remote object is create as a singleton. Connection Id is set to PortId of the "server".
             /// </summary>
             internal ulong ConnectionId;
             /// <summary>
@@ -209,17 +209,17 @@ namespace System.Net.Rina.Shims
 
         public Address LocalAddress { get; private set; }
 
-        public static WcfServiceIpcProcess Create(string localAddress)
+        public static WcfIpcProcess Create(string localAddress)
         {
             try
             {
-                var ipc = new WcfServiceIpcProcess(localAddress);
+                var ipc = new WcfIpcProcess(localAddress);
                 return ipc;
             }
             catch(AddressAlreadyInUseException e)
             {
                 Trace.WriteLine($"Address already in use: {e.Message}", "ERROR");
-                throw new AddressAlreadyInUseException($"specified address '{Address.FromWinIpcPort(localAddress)}' is unavailable because it is already in use.");
+                throw new AddressAlreadyInUseException($"specified address 'localAddress' is unavailable because it is already in use.");
             }
         }
 
@@ -227,11 +227,11 @@ namespace System.Net.Rina.Shims
         /// Creates a WinIpcContext object using the specified local address.
         /// </summary>
         /// <param name="localAddress">The name of the local IPC port.</param>
-        WcfServiceIpcProcess(string localAddress)
+        WcfIpcProcess(string localAddress)
         {
-            LocalAddress = Address.FromWinIpcPort(localAddress);
+            LocalAddress = Address.PipeAddressUri("localhost",localAddress);
             // create server side of channel...
-            _serviceHost = new ServiceHost(new RemoteObject(this), new Uri[]{new Uri((string)this.LocalAddress.Value)});
+            _serviceHost = new ServiceHost(new RemoteObject(this), new Uri[]{this.LocalAddress.Value as Uri});
             _serviceHost.AddServiceEndpoint(typeof(IRemoteObject), new NetNamedPipeBinding(), typeof(RemoteObject).ToString());
             _serviceHost.Open();                        
         }
@@ -239,17 +239,17 @@ namespace System.Net.Rina.Shims
         /// <summary>
         /// Private method for allocating a new flow and filling all necessary tables.
         /// </summary>
-        /// <param name="flowInstance">An instance of flow for which all the processing is perfomed.</param>
+        /// <param name="flowInstance">An instance of flow for which all the processing is performed.</param>
         /// <param name="remoteObject">The IWinIpcRinaObject object used for remote communication.</param>
         /// <returns>The Port object associated with newly allocated flow.</returns>
         private bool allocateFlow(FlowInformation flowInformation, out ConnectionEndpoint cep)
         {
             var port = new Port(this, ++_lastAllocatedPortId);
-            var localAddress = (string)this.LocalAddress.Value;
-            var remoteAddres = (string)flowInformation.DestinationAddress.Value;
+            var localAddress = this.LocalAddress.Value.ToString();
+            var remoteAddress = (string)flowInformation.DestinationAddress.Value.ToString();
             // connect to the target IPC:
             var commObject = new ChannelFactory<IRemoteObject>(new NetNamedPipeBinding());
-            var remoteObject = commObject.CreateChannel(new EndpointAddress(string.Format("{0}/{1}", remoteAddres, typeof(RemoteObject).ToString())));
+            var remoteObject = commObject.CreateChannel(new EndpointAddress($"{remoteAddress}/{typeof(RemoteObject).ToString()}"));
 
             var receiveBuffer = new FifoStream(8192);
             cep = new ConnectionEndpoint()
@@ -272,14 +272,14 @@ namespace System.Net.Rina.Shims
 		{
             lock(_connectionEndpointsLock)
             {
-                var wipcPortname = (string)flowInformation.DestinationAddress.Value;              
+                var wipcPortname = flowInformation.DestinationAddress.Value.ToString();              
                 ConnectionEndpoint cep = null;
                 if (this.allocateFlow(flowInformation, out cep))
                 {
                     var connInfo = new ConnectionInformation()
                     {
-                        SourceAddress = (string)this.LocalAddress.Value,
-                        DestinationAddress = (string)flowInformation.DestinationAddress.Value,
+                        SourceAddress = LocalAddress.Value.ToString(),
+                        DestinationAddress = flowInformation.DestinationAddress.Value.ToString(),
                         SourceProcessName = flowInformation.SourceApplication.ProcessName,
                         SourceProcessInstance = flowInformation.SourceApplication.ProcessInstance,
                         SourceEntityName = flowInformation.SourceApplication.EntityName,
@@ -378,8 +378,7 @@ namespace System.Net.Rina.Shims
 		{
             lock(_generalLock)
             {
-                var info = String.Format("Application '{0}' registered.", appInfo.ProcessName);
-                Trace.WriteLine(info, "INFO");
+                Trace.WriteLine($"Application '{appInfo.ProcessName}' registered at process {this.LocalAddress}.", "INFO");
                 this._registeredApplications.Add(new RegisteredApplication() { ApplicationInfo = appInfo, RequestHandler = reqHandler });
             }
 		}
@@ -531,9 +530,14 @@ namespace System.Net.Rina.Shims
             return -1;
         }
 
-        public Task<bool> DataAvailableAsync(Port port)
+        public Task<bool> DataAvailableAsync(Port port, CancellationToken ct)
         {
-            throw new NotImplementedException();
+            ConnectionEndpoint cep;
+            if (_ConnectionEndpoints.TryGetValue(primaryKey: port.Id, val: out cep))
+            {
+                return Task.Factory.StartNew(() => cep.ReceiveBuffer.WaitForData(ct));
+            }
+            return Task.Factory.StartNew(() => false);
         }
 
         public bool DataAvailable(Port port)
@@ -560,9 +564,9 @@ namespace System.Net.Rina.Shims
         [ServiceBehavior(InstanceContextMode = InstanceContextMode.Single, IncludeExceptionDetailInFaults = true)]
         internal class RemoteObject : IRemoteObject
         {
-            WcfServiceIpcProcess _parentObject;
+            WcfIpcProcess _parentObject;
             ChannelFactory<IRemoteObject> _channel;
-            public RemoteObject(WcfServiceIpcProcess parent)
+            public RemoteObject(WcfIpcProcess parent)
             {
                 this._parentObject = parent;
             }

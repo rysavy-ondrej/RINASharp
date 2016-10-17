@@ -35,6 +35,9 @@ using System.Threading.Tasks;
 
 namespace System.Net.Rina
 {
+    /// <summary>
+    /// Adaptation of <see cref="System.Net.Sockets.NetworkStream"/> class for use with RINA.
+    /// </summary>
     public class IpcChannelStream : Stream
     {
         /// <devdoc>
@@ -406,7 +409,7 @@ namespace System.Net.Rina
 
         /// <summary>
         /// Writes data to the stream. Since the underlaying port is in blocking mode all bytes will be written or
-        /// exceoption is thrown, e.g., in case of closing port before completing operation.
+        /// exception is thrown, e.g., in case of closing port before completing operation.
         /// </summary>
         /// <param name="buffer">Buffer to write from.</param>
         /// <param name="offset">Offset into the buffer from where we'll start writing.</param>
@@ -461,7 +464,7 @@ namespace System.Net.Rina
                 }
 
                 //
-                // some sort of error occured on the socket call,
+                // some sort of error occurred on the socket call,
                 // set the SocketException as InnerException and throw
                 //
                 throw new IOException("Cannot write to port", exception);

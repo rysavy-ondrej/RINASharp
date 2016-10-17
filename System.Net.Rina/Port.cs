@@ -87,9 +87,23 @@ namespace System.Net.Rina
         SelectError = 2
     } // 
 
+    [Flags]
+    public enum PortFlags
+    {
+        None = 0x00000000,
+        OutOfBand = 0x00000001,
+        Peek = 0x00000002,
+        DontRoute = 0x00000004,
+        MaxIOVectorLength = 0x00000010,
+        Truncated = 0x00000100,
+        ControlDataTruncated = 0x00000200,
+        Broadcast = 0x00000400,
+        Multicast = 0x00000800,
+        Partial = 0x00008000,
+    }
 
     [Flags]
-    public enum PortInformationOptions
+    public enum PortInformationOptions: int
     {
         NonBlocking = 0x1,
         Connected = 0x2,
@@ -106,8 +120,9 @@ namespace System.Net.Rina
         private int m_IntCleanedUp = 0;
 
 
-
-
+        /// <summary>
+        /// Gets true id data are available for reading through this port; otherwise it returns false.
+        /// </summary>
         public bool Available
         {
             get
@@ -116,7 +131,13 @@ namespace System.Net.Rina
             }
         }
 
+        /// <summary>
+        /// IPC object represented by its <see cref="IRinaIpc"/> interface that owns this <see cref="Port"/>. 
+        /// </summary>
         public IRinaIpc Ipc { get; private set; }
+        /// <summary>
+        /// <see cref="ulong"/> value representing a unique identifier of the <see cref="Port"/> within the current IPC.  
+        /// </summary>
 		public UInt64 Id { get; private set; }
         /// <summary>
         /// Gets or sets a value that indicates whether the Port is in blocking mode.
@@ -153,7 +174,7 @@ namespace System.Net.Rina
         }
 
         /// <summary>
-        /// Gets the type of port. 
+        /// Gets the type of the current <see cref="Port"/> object. 
         /// </summary>
         public PortType PortType { get; internal set; }
 
@@ -209,6 +230,38 @@ namespace System.Net.Rina
             }
             throw new NotImplementedException();
         }
+
+        
     }
+    /*
+     * 
+     * 
+   public Socket(SocketType socketType, ProtocolType protocolType);
+public Socket(AddressFamily addressFamily, SocketType socketType, ProtocolType protocolType);
+public static bool OSSupportsIPv4 { get; }
+public static bool OSSupportsIPv6 { get; }
+public AddressFamily AddressFamily { get; }
+public bool Connected { get; }
+public EndPoint LocalEndPoint { get; }
+public bool NoDelay { get; set; }
+public ProtocolType ProtocolType { get; }
+public int ReceiveBufferSize { get; set; }
+public EndPoint RemoteEndPoint { get; }
+public int SendBufferSize { get; set; }
+public short Ttl { get; set; }
+public static void CancelConnectAsync(SocketAsyncEventArgs e);
+public static bool ConnectAsync(SocketType socketType, ProtocolType protocolType, SocketAsyncEventArgs e);
+public bool AcceptAsync(SocketAsyncEventArgs e);
+public void Bind(EndPoint localEP);
+public bool ConnectAsync(SocketAsyncEventArgs e);
+public void Dispose();
+public void Listen(int backlog);
+public bool ReceiveAsync(SocketAsyncEventArgs e);
+public bool ReceiveFromAsync(SocketAsyncEventArgs e);
+public bool SendAsync(SocketAsyncEventArgs e);
+public bool SendToAsync(SocketAsyncEventArgs e);
+public void Shutdown(SocketShutdown how);
+protected virtual void Dispose(bool disposing);
+*/
 }
 

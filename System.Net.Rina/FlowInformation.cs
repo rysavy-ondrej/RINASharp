@@ -24,12 +24,10 @@ using System;
 
 namespace System.Net.Rina
 {
-	public class ConnectionId
-	{}
-
 	/// <summary>
 	/// Flow information object describes parameters of the flow to be created 
-	/// between two end-points Ipc. 
+	/// between two IPCs. It represents flow requirements sent by 
+    /// the client process to supporting process in order to allocate a new flow.  
 	/// </summary>
 	public class FlowInformation
 	{

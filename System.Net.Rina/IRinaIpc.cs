@@ -42,11 +42,11 @@ namespace System.Net.Rina
     public delegate ConnectionRequestResult ConnectionRequestHandler(IRinaIpc context, FlowInformation flowInformation, out AcceptFlowHandler acceptFlowHandler);
 
     /// <summary>
-    /// This delegate is used to inform application that accepted a new request about the created flow. In particulat, application 
+    /// This delegate is used to inform application that accepted a new request about the created flow. In particular, application 
     /// to serve the new request has to know port used for further communication.
     /// </summary>
     /// <param name="context">The IpcContext object which manages the communication.</param>
-    /// <param name="flowInformation">The flow information describing communicaton parties.</param>
+    /// <param name="flowInformation">The flow information describing communication parties.</param>
     /// <param name="port">The port object used to communication with other end point.</param>
     public delegate Task AcceptFlowHandler(IRinaIpc context, FlowInformation flowInformation, Port port);
 	/// <summary>
@@ -114,7 +114,7 @@ namespace System.Net.Rina
         /// its Result is true, more output is available in the source (though another consumer of the source may retrieve the data). 
         /// If it returns false, more output is not and will never be available, due to the source completing prior to output being available.
         /// </returns>
-        Task<bool> DataAvailableAsync(Port port);
+        Task<bool> DataAvailableAsync(Port port, CancellationToken ct);
 
 		/// <summary>
 		/// Registers the application name in the current IPC. An application serves new flows that are passed

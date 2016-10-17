@@ -18,3 +18,7 @@ C:\Users\Ondrej\Documents\GitHub\RINASharp\Demo\TimeServiceClient\bin\Debug\Syst
 C:\Users\Ondrej\Documents\GitHub\RINASharp\Demo\TimeServiceClient\obj\Debug\TimeServiceClient.csprojResolveAssemblyReference.cache
 C:\Users\Ondrej\Documents\GitHub\RINASharp\Demo\TimeServiceClient\obj\Debug\tsc.exe
 C:\Users\Ondrej\Documents\GitHub\RINASharp\Demo\TimeServiceClient\obj\Debug\tsc.pdb
+C:\Users\Ondrej\Documents\GitHub\RINASharp\Demo\TimeServiceClient\bin\Debug\ConsoleToolkit.dll
+C:\Users\Ondrej\Documents\GitHub\RINASharp\Demo\TimeServiceClient\bin\Debug\ConsoleToolkit.xml
+C:\Users\Ondrej\Documents\GitHub\RINASharp\Demo\TimeServiceClient\bin\Debug\PacketDotNet.dll
+C:\Users\Ondrej\Documents\GitHub\RINASharp\Demo\TimeServiceClient\bin\Debug\PacketDotNet.xml

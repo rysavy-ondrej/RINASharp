@@ -67,3 +67,59 @@ private static Task acceptFlowHandler(IRinaIpc context, FlowInformation flowInfo
    });
 }
 ```
+
+
+# Naming and addressing
+
+## URI
+Within a DIF it is possible to use URI style addressing:
+```
+rina://DIF-NAME/IPC-NAME/RIB-PATH
+```
+Some well-known RIB-paths are:
+
+| Path | Meaning                                                        |
+|-----------------------------------------------------------------------|
+| flows/FLOW-ID/data | provides flow data access            |
+| flows/FLOW-ID/control | provides control information for flow |
+| apps/APPLICATION-NAME | access to application |
+| apps/APPLICATION-NAME/INSTANCE | identifies application process |
+
+### FLOWS subpath
+Flows subpath can be used to control flow management. To create a new flow
+the client sends a request using the following snippet:
+Request a new flow:
+```CSharp
+var ci = new ConnectionInformation()
+       {               
+           SourceAddress = "rina://ethernet-shim-dif/00155d08f6e3e",
+           SourceApplication = "SensorReader",
+           DestinationAddress = "rina://ethernet-shim-dif/00155d0c6404",
+           DestinationApplication = "TempSensor"
+       };
+
+var openReq = new IpcOpenRequest()
+      {
+          ObjectClass = "Flow",
+          ObjectName = "/flows/",
+          ObjectValue = ci
+      };
+
+var port = ipc.AllocateFlow("rina://ethernet-shim-dif/00155d0c6404");
+
+ipc.Send(port, openReq)
+```
+
+### APPS subpath
+Identifies a web server represented by iis application with pid 4759
+that runs on Dublin host.
+```
+rina://wcf-shim-dif/Dublin/apps/iis.exe/4759
+```
+Note that application NAME can
+be an alias. So, it is possible to define names for well-known services and maps
+them to specific providers.
+```
+rina://wcf-shim-dif/Dublin/apps/web-server
+```
+This is an alias that maps to iis application.

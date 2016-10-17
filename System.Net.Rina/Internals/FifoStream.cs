@@ -85,6 +85,18 @@ namespace System.IO
             _dataAvailable.WaitOne(millisecondsTimeout);
         }
 
+        /// <summary>
+        /// This method implements waiting for available data checking the state according the specified polling interval.
+        /// </summary>
+        /// <param name="ct">CancellationToke used to interrupting the method.</param>
+        /// <param name="pollInterval">POlling interval specified in ms. Default value is 100ms.</param>
+        /// <returns>true, if the data are available; otherwise false.</returns>
+        public bool WaitForData(CancellationToken ct, int pollInterval = 100)
+        {
+            while(!_dataAvailable.WaitOne(100)) { if (ct.IsCancellationRequested) return false; }
+            return true;
+        }
+
         public override int Read(byte[] buffer, int offset, int count)
         {
             if (buffer == null) throw new ArgumentNullException("buffer");

@@ -1,0 +1,17 @@
+C:\Users\Ondrej\Documents\GitHub\RINASharp\System.Net.Rina.Tests\bin\Debug\System.Net.Rina.Tests.dll
+C:\Users\Ondrej\Documents\GitHub\RINASharp\System.Net.Rina.Tests\bin\Debug\System.Net.Rina.Tests.pdb
+C:\Users\Ondrej\Documents\GitHub\RINASharp\System.Net.Rina.Tests\bin\Debug\Microsoft.Pex.Framework.dll
+C:\Users\Ondrej\Documents\GitHub\RINASharp\System.Net.Rina.Tests\bin\Debug\nunit.framework.dll
+C:\Users\Ondrej\Documents\GitHub\RINASharp\System.Net.Rina.Tests\bin\Debug\System.Net.Rina.dll
+C:\Users\Ondrej\Documents\GitHub\RINASharp\System.Net.Rina.Tests\bin\Debug\System.Threading.Tasks.Dataflow.dll
+C:\Users\Ondrej\Documents\GitHub\RINASharp\System.Net.Rina.Tests\bin\Debug\Microsoft.ExtendedReflection.Reasoning.dll
+C:\Users\Ondrej\Documents\GitHub\RINASharp\System.Net.Rina.Tests\bin\Debug\Microsoft.ExtendedReflection.dll
+C:\Users\Ondrej\Documents\GitHub\RINASharp\System.Net.Rina.Tests\bin\Debug\System.Net.Rina.pdb
+C:\Users\Ondrej\Documents\GitHub\RINASharp\System.Net.Rina.Tests\bin\Debug\Microsoft.Pex.Framework.xml
+C:\Users\Ondrej\Documents\GitHub\RINASharp\System.Net.Rina.Tests\bin\Debug\nunit.framework.xml
+C:\Users\Ondrej\Documents\GitHub\RINASharp\System.Net.Rina.Tests\bin\Debug\System.Threading.Tasks.Dataflow.xml
+C:\Users\Ondrej\Documents\GitHub\RINASharp\System.Net.Rina.Tests\obj\Debug\System.Net.Rina.Tests.csprojResolveAssemblyReference.cache
+C:\Users\Ondrej\Documents\GitHub\RINASharp\System.Net.Rina.Tests\obj\Debug\System.Net.Rina.Tests.dll
+C:\Users\Ondrej\Documents\GitHub\RINASharp\System.Net.Rina.Tests\obj\Debug\System.Net.Rina.Tests.pdb
+C:\Users\Ondrej\Documents\GitHub\RINASharp\System.Net.Rina.Tests\bin\Debug\PacketDotNet.dll
+C:\Users\Ondrej\Documents\GitHub\RINASharp\System.Net.Rina.Tests\bin\Debug\PacketDotNet.xml

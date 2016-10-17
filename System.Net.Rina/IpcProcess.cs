@@ -22,6 +22,7 @@
 //
 using System.Collections.Generic;
 using System.Net.Rina.DataUnits;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Threading.Tasks.Dataflow;
 namespace System.Net.Rina
@@ -85,7 +86,7 @@ namespace System.Net.Rina
         }
 
         /// <summary>
-        /// Represents a local ddress of the current IPCProcess.
+        /// Represents a local address of the current IPCProcess.
         /// </summary>
         public Address LocalAddress { get { return this._localAddress; } }
 
@@ -207,7 +208,10 @@ namespace System.Net.Rina
             sduProtectionBlockNbound.LinkTo(dataTransferBlockNbound);
             dataTransferBlockNbound.LinkTo(delimiterBlockNbound);
             delimiterBlockNbound.LinkTo(_northPortMap[northPort.Id].OutQueue);
-            await ReceiveAsync(southPort, sduProtectionBlockNbound);
+
+            var ct = new CancellationToken();
+
+            await ReceiveAsync(southPort, sduProtectionBlockNbound,ct);
         }
 
         /// <summary>
@@ -220,9 +224,9 @@ namespace System.Net.Rina
             throw new NotImplementedException();
         }
 
-        static async Task ReceiveAsync(Port southPort, ITargetBlock<SduInternal> target)
+        static async Task ReceiveAsync(Port southPort, ITargetBlock<SduInternal> target, CancellationToken ct)
         {
-            while (await southPort.Ipc.DataAvailableAsync(southPort))
+            while (await southPort.Ipc.DataAvailableAsync(southPort, ct))
             {
                 var buffer = southPort.Ipc.Receive(southPort);
                 var sdu = new SduInternal(southPort, buffer, 0, buffer.Length);
@@ -331,12 +335,12 @@ namespace System.Net.Rina
             throw new NotImplementedException();
         }
 
-        public Task<bool> DataAvailableAsync(Port port)
+        public Task<bool> DataAvailableAsync(Port port, CancellationToken ct)
         {
             NorthPortController pi;
             if (_northPortMap.TryGetValue(port.Id, out pi))
             {
-                return pi.InQueue.OutputAvailableAsync();
+                return pi.InQueue.OutputAvailableAsync(ct);
             }
             return null;
         }

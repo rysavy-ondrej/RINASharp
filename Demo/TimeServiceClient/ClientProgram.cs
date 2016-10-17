@@ -20,9 +20,14 @@
 //  along with this program; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 //
+using ConsoleToolkit;
+using ConsoleToolkit.ApplicationStyles;
+using ConsoleToolkit.CommandLineInterpretation.ConfigurationAttributes;
+using ConsoleToolkit.ConsoleIO;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Net.Rina;
 using System.Net.Rina.Shims;
@@ -31,43 +36,112 @@ using System.Threading.Tasks;
 
 namespace TimeServiceClient
 {
+
     /// <summary>
     /// Inmplements a simple program that prints time information by querying TimeService.
     /// </summary>
-    class ClientProgram
+    class ClientProgram : ConsoleApplication
     {
         static void Main(string[] args)
         {
-            Trace.Listeners.Add(new TextWriterTraceListener(Console.Out));
+            Trace.Listeners.Add(new TextWriterTraceListener(System.Console.Out));
             Trace.AutoFlush = true;
+            Toolkit.Execute<ClientProgram>(args);
+        }
 
-            var ipcHost = new IpcHost();
-            var shimIpcProcess = WcfServiceIpcProcess.Create("client" + Process.GetCurrentProcess().Id.ToString());
-            var flowInformation = new FlowInformation()
+        protected override void Initialise()
+        {
+            base.HelpOption<TimeClient>(o => o.Help);
+            base.Initialise();
+        }
+    }
+
+    [Command]
+    [Description("Runs an instance of TimeClient - a simple tool that reads actual time from the server.")]
+    class TimeClient
+    {
+
+        [Option("name", shortName: "n")]
+        [Description("A name of the client.")]
+        public string ClientName { get; set; }
+
+        [Option("address", shortName: "a")]
+        public string LocalAddress { get; set; }
+
+        [Option("shimDif", shortName: "d")]
+        [Description("Specifies underlying ShimDIF to use. Default is WcfShim.")]
+        public string ShimDif { get; set; }
+
+        [Option("help", shortName: "h", ShortCircuit = true)]
+        [Description("Display this help text.")]
+        public bool Help { get; set; }
+
+        [Positional]
+        [Description("Server address in form of: rina://dif-nametype/server-node/apps/app-name")]
+        public string ServerAddress { get; set; }
+
+        /// <summary>
+        /// Creates a new instance of <see cref="TimeServer"/>.
+        /// </summary>
+        public TimeClient()
+        {
+            ClientName = "TimeClient";
+            LocalAddress = "Brno";
+            ShimDif = IpcProcessType.WcfShim.ToString();
+        }
+
+        /// <summary>
+        /// Executed after all arguments were parsed. The method initializes and runs <see cref="TimeServer"/>.
+        /// </summary>
+        /// <param name="console"></param>
+        /// <param name="error"></param>
+        [CommandHandler]
+        public void Handler(IConsoleAdapter console, IErrorAdapter error)
+        {
+
+
+            // parse server address:
+            var serverUri = new Uri(ServerAddress);
+            var difName = serverUri.GetDifName();
+            IpcProcessType difType;
+            Enum.TryParse<IpcProcessType>(difName, true, out difType);
+            var ipcAddress = serverUri.GetIpcAddress();
+            var appName = serverUri.GetAppName();
+            Trace.WriteLine($"Connecting to {serverUri.AbsoluteUri}", "INFO");
+            Trace.WriteLine($"SHIM:        {difName} ({difType})", "INFO");
+            Trace.WriteLine($"IPC-ADDRESS: {ipcAddress}", "INFO");
+            Trace.WriteLine($"APP-NAME:    {appName}", "INFO");
+
+
+            using (var ipcHost = new IpcHost())
             {
-                SourceApplication = new ApplicationNamingInfo("TimeClient", "1", "TimeServiceProtocol", "V1"),
-                DestinationApplication = new ApplicationNamingInfo("TimeServer", "1", "TimeServiceProtocol", "V1"),
-                SourceAddress = shimIpcProcess.LocalAddress,
-                DestinationAddress = Address.FromWinIpcPort("server")
-            };
-            
-            var port = shimIpcProcess.AllocateFlow(flowInformation);
-            if (port != null)
-            {
-                var cmdBytes = Encoding.ASCII.GetBytes("DateTime.Now\n");
-                shimIpcProcess.Send(port, cmdBytes, 0, cmdBytes.Length);
-                var answerBuffer = shimIpcProcess.Receive(port);
-                var answerString = Encoding.ASCII.GetString(answerBuffer, 0, answerBuffer.Length);
-                Console.WriteLine($"Current remote time is: {answerString}");
-                Trace.WriteLine("Deallocating Flow...", "INFO");
-                shimIpcProcess.DeallocateFlow(port);
-                Trace.WriteLine("Disposing IpcProcess...", "INFO");
-                shimIpcProcess.Dispose();
-                Trace.WriteLine("Bye.");
-            }
-            else
-            {
-                Trace.WriteLine($"Cannot connect to {flowInformation.DestinationApplication}@{flowInformation.DestinationAddress}.", "ERROR");
+                var ipc = IpcProcessFactory.CreateProcess(difType, $"{ClientName}.{Process.GetCurrentProcess().Id.ToString()}");
+                var flowInformation = new FlowInformation()
+                {
+                    SourceApplication = new ApplicationNamingInfo("TimeClient", "1", "TimeServiceProtocol", "1"),
+                    DestinationApplication = new ApplicationNamingInfo("TimeServer", "1", "TimeServiceProtocol", "1"),
+                    SourceAddress = ipc.LocalAddress,
+                    DestinationAddress = Address.PipeAddressUri("localhost", ipcAddress)
+                };
+
+                var port = ipc.AllocateFlow(flowInformation);
+                if (port != null)
+                {
+                    var cmdBytes = Encoding.ASCII.GetBytes("DateTime.Now\n");
+                    ipc.Send(port, cmdBytes, 0, cmdBytes.Length);
+                    var answerBuffer = ipc.Receive(port);
+                    var answerString = Encoding.ASCII.GetString(answerBuffer, 0, answerBuffer.Length);
+                    Console.WriteLine($"Current remote time is: {answerString}");
+                    Trace.WriteLine("Deallocating Flow...", "INFO");
+                    ipc.DeallocateFlow(port);
+                    Trace.WriteLine("Disposing IpcProcess...", "INFO");
+                    ipc.Dispose();
+                    Trace.WriteLine("Bye.");
+                }
+                else
+                {
+                    Trace.WriteLine($"Cannot connect to {flowInformation.DestinationApplication}@{flowInformation.DestinationAddress}.", "ERROR");
+                }
             }
         }
     }
