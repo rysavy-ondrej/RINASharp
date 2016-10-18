@@ -13,5 +13,3 @@ C:\Users\Ondrej\Documents\GitHub\RINASharp\System.Net.Rina.Tests\bin\Debug\Syste
 C:\Users\Ondrej\Documents\GitHub\RINASharp\System.Net.Rina.Tests\obj\Debug\System.Net.Rina.Tests.csprojResolveAssemblyReference.cache
 C:\Users\Ondrej\Documents\GitHub\RINASharp\System.Net.Rina.Tests\obj\Debug\System.Net.Rina.Tests.dll
 C:\Users\Ondrej\Documents\GitHub\RINASharp\System.Net.Rina.Tests\obj\Debug\System.Net.Rina.Tests.pdb
-C:\Users\Ondrej\Documents\GitHub\RINASharp\System.Net.Rina.Tests\bin\Debug\PacketDotNet.dll
-C:\Users\Ondrej\Documents\GitHub\RINASharp\System.Net.Rina.Tests\bin\Debug\PacketDotNet.xml

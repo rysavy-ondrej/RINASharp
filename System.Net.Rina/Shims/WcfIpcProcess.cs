@@ -30,82 +30,7 @@ using System.Threading.Tasks;
 
 namespace System.Net.Rina.Shims
 {
-    /// <summary>
-    /// This class is used to hold properties of a new connection requested by the client side.
-    /// Information in this class is used to identify originator of the request as well as to 
-    /// find an application that should serve the request.
-    /// </summary>
-    [DataContract]
-    public class ConnectionInformation
-    {
-        /// <summary>
-        /// Represents a source Windows IPC port name.
-        /// </summary>
-        [DataMember]
-        public string SourceAddress { get; set; }
-        /// <summary>
-        /// Represents a destination Windows IPC port name.
-        /// </summary>
-        [DataMember]
-        public string DestinationAddress { get; set; }
-        /// <summary>
-        /// Represents a source application naming information.
-        /// </summary>
-        [DataMember]
-        public string SourceProcessName { get; set; }
-        [DataMember]
-        public string SourceProcessInstance { get; set; }
-        [DataMember]
-        public string SourceEntityName { get; set; }
-        [DataMember]
-        public string SourceEntityInstance { get; set; }
-        /// <summary>
-        /// Represents a destination application naming information.
-        /// </summary>
-        [DataMember]
-        public string DestinationProcessName { get; set; }
-        [DataMember]
-        public string DestinationProcessInstance { get; set; }
-        [DataMember]
-        public string DestinationEntityName { get; set; }
-        [DataMember]
-        public string DestinationEntityInstance { get; set; }
-
-        public ConnectionInformation Reverse()
-        {
-            var rev = new ConnectionInformation()
-            {
-                SourceAddress = this.DestinationAddress,
-                DestinationAddress = this.SourceAddress,
-                SourceProcessName = this.DestinationProcessName,
-                SourceProcessInstance = this.DestinationProcessInstance,
-                SourceEntityName = this.DestinationEntityName,
-                SourceEntityInstance = this.DestinationEntityInstance,
-                DestinationProcessName = this.SourceProcessName,
-                DestinationProcessInstance = this.SourceProcessInstance,
-                DestinationEntityName = this.SourceEntityName,
-                DestinationEntityInstance = this.SourceEntityInstance
-            };
-            return rev;
-            
-        }
-
-        /// <summary>
-        /// Gets a flow information object from the current connection information object.
-        /// </summary>
-        /// <returns>A FlowInformation object.</returns>
-        public FlowInformation GetFlowInformation()
-        {
-            var flowInfo = new FlowInformation()
-            {
-                SourceAddress = new Address(new Uri(this.SourceAddress)),
-                DestinationAddress = new Address(new Uri(this.DestinationAddress)),
-                SourceApplication = new ApplicationNamingInfo(this.SourceProcessName, this.SourceProcessInstance, this.SourceEntityName, this.SourceEntityInstance),
-                DestinationApplication = new ApplicationNamingInfo(this.DestinationProcessName, this.DestinationProcessInstance, this.DestinationEntityName, this.DestinationEntityInstance)
-            };
-            return flowInfo;
-        }
-    }
+   
 
     /// <summary>
     /// This specifies an interface of a remote IPC object that is used to serve all connection requests.
@@ -114,13 +39,20 @@ namespace System.Net.Rina.Shims
     internal interface IRemoteObject
     {
         /// <summary>
-        /// Pushes data to the target object. 
+        /// Closes the flow with the specified connection id.
         /// </summary>
-        /// <param name="connectionId">Id of connection associated with this operation.</param>
-        /// <param name="data">A buffer with data to be pushed to the remote site.</param>
-        /// <return>Number of bytes accepted from the provided buffer.</return>
+        /// <param name="connectionId">>Id of connection associated with this operation.</param>
         [OperationContract]
-        int PushData(UInt64 connectionId, byte []data);
+        void CloseConnection(UInt64 connectionId);
+
+        /// <summary>
+        /// Request a flow allocation.
+        /// </summary>
+        /// <param name="flowInfo">Information about flow.</param>
+        /// <returns>A value that can be used as a connection Id for further operations.</returns>
+        [OperationContract]
+        UInt64 OpenConnection(WcfIpcProcess.ConnectionInformation flowInfo);
+
         /// <summary>
         /// Attempts to pull data from remote site.
         /// </summary>
@@ -131,19 +63,13 @@ namespace System.Net.Rina.Shims
         byte[] PullData(UInt64 connectionId, int count);
 
         /// <summary>
-        /// Request a flow allocation.
+        /// Pushes data to the target object. 
         /// </summary>
-        /// <param name="flowInfo">Information about flow.</param>
-        /// <returns>A value that can be used as a connection Id for further operations.</returns>
+        /// <param name="connectionId">Id of connection associated with this operation.</param>
+        /// <param name="data">A buffer with data to be pushed to the remote site.</param>
+        /// <return>Number of bytes accepted from the provided buffer.</return>
         [OperationContract]
-        UInt64 OpenConnection(ConnectionInformation flowInfo);
-
-        /// <summary>
-        /// Closes the flow with the specified connection id.
-        /// </summary>
-        /// <param name="connectionId">>Id of connection associated with this operation.</param>
-        [OperationContract]
-        void CloseConnection(UInt64 connectionId);
+        int PushData(UInt64 connectionId, byte []data);
     }
 
    
@@ -155,73 +81,24 @@ namespace System.Net.Rina.Shims
     [ShimIpc("WcfService")]
     public class WcfIpcProcess : IRinaIpc
 	{
-        object _connectionEndpointsLock = new object();
-        object _generalLock = new object();
-        ulong _lastAllocatedPortId = 0;
-        ServiceHost _serviceHost;
-
-        internal class ConnectionEndpoint
-        {
-            /// <summary>
-            /// Stores the local Port object.
-            /// </summary>
-            internal Port Port;
-            /// <summary>
-            /// Specifies whether the port is blocking or non-blocking.
-            /// </summary>
-            internal bool Blocking;
-            /// <summary>
-            /// Flow information that describes parameters of the current connection.
-            /// </summary>
-            internal FlowInformation FlowInformation;
-            /// <summary>
-            /// Connection Id is used to resolve to which connection data should be written as 
-            /// remote object is create as a singleton. Connection Id is set to PortId of the "server".
-            /// </summary>
-            internal ulong ConnectionId;
-            /// <summary>
-            /// Object used to connect to the remote object.
-            /// </summary>
-            internal ICommunicationObject CommunicationObject;
-            /// <summary>
-            /// Remote object that is used for sending and received data.
-            /// </summary>
-            internal IRemoteObject RemoteObject;
-            /// <summary>
-            /// Local receive buffer. All data that are supposed for this flow are stored in this buffer.
-            /// </summary>
-            internal FifoStream ReceiveBuffer;
-        }
-
         /// <summary>
         /// This maps the port id to connection endpoint object that maintains all necessary information for a flow.
         /// </summary>
         MultiKeyDictionary<ulong, ulong, ConnectionEndpoint> _ConnectionEndpoints = new MultiKeyDictionary<ulong, ulong, ConnectionEndpoint>();
 
+        object _connectionEndpointsLock = new object();
+        private bool _disposedValue = false;
+        // To detect redundant calls
+        private object _disposeLock = new object();
+
+        object _generalLock = new object();
+        uint _lastAllocatedPortId = 0;
         /// <summary>
         /// Collection all registered applications and their request handlers.
         /// </summary>
         List<RegisteredApplication> _registeredApplications = new List<RegisteredApplication>();
-        /// <summary>
-        /// Maps flow ids to receive buffer objects.
-        /// </summary>
-        //Dictionary<ulong, FifoStream> _receiveBuffers = new Dictionary<ulong, FifoStream> ();
 
-        public Address LocalAddress { get; private set; }
-
-        public static WcfIpcProcess Create(string localAddress)
-        {
-            try
-            {
-                var ipc = new WcfIpcProcess(localAddress);
-                return ipc;
-            }
-            catch(AddressAlreadyInUseException e)
-            {
-                Trace.WriteLine($"Address already in use: {e.Message}", "ERROR");
-                throw new AddressAlreadyInUseException($"specified address 'localAddress' is unavailable because it is already in use.");
-            }
-        }
+        ServiceHost _serviceHost;
 
         /// <summary>
         /// Creates a WinIpcContext object using the specified local address.
@@ -229,11 +106,301 @@ namespace System.Net.Rina.Shims
         /// <param name="localAddress">The name of the local IPC port.</param>
         WcfIpcProcess(string localAddress)
         {
-            LocalAddress = Address.PipeAddressUri("localhost",localAddress);
+            LocalAddress = Address.PipeAddressUri("localhost", localAddress);
             // create server side of channel...
-            _serviceHost = new ServiceHost(new RemoteObject(this), new Uri[]{this.LocalAddress.Value as Uri});
+            _serviceHost = new ServiceHost(new RemoteObject(this), new Uri[] { this.LocalAddress.Value as Uri });
             _serviceHost.AddServiceEndpoint(typeof(IRemoteObject), new NetNamedPipeBinding(), typeof(RemoteObject).ToString());
-            _serviceHost.Open();                        
+            _serviceHost.Open();
+        }
+
+        public Address LocalAddress { get; private set; }
+        public IpcHost Host { get; set; }
+
+        /// <summary>
+        /// Maps flow ids to receive buffer objects.
+        /// </summary>
+        //Dictionary<ulong, FifoStream> _receiveBuffers = new Dictionary<ulong, FifoStream> ();
+        public static WcfIpcProcess Create(IpcHost host, string localAddress)
+        {
+            try
+            {
+                var ipc = new WcfIpcProcess(localAddress) { Host = host };
+                return ipc;
+            }
+            catch (AddressAlreadyInUseException e)
+            {
+                Trace.WriteLine($"Address already in use: {e.Message}", "ERROR");
+                throw new AddressAlreadyInUseException($"specified address 'localAddress' is unavailable because it is already in use.");
+            }
+        }
+
+        public void Abort(Port port)
+        {
+            throw new NotImplementedException();
+        }
+
+        public int AvailableData(Port port)
+        {
+            ConnectionEndpoint cep;
+            if (_ConnectionEndpoints.TryGetValue(primaryKey: port.Id, val: out cep))
+            {
+                return cep.ReceiveBuffer.AvailableBytes;
+            }
+            return -1;
+        }
+
+        /// <summary>
+        /// Allocates a new flow based on provided flowInformation. This is used by the initiator of the flow request.
+        /// </summary>
+        /// <param name="flowInformation"></param>
+        /// <returns>The Port object that can be used for communication with remote party.</returns>
+        public Port Connect(FlowInformation flowInformation)
+        {
+            lock (_connectionEndpointsLock)
+            {
+                var wipcPortname = flowInformation.DestinationAddress.Value.ToString();
+                ConnectionEndpoint cep = null;
+                if (this.allocateFlow(flowInformation, out cep))
+                {
+                    var connInfo = new ConnectionInformation()
+                    {
+                        SourceAddress = LocalAddress.Value.ToString(),
+                        DestinationAddress = flowInformation.DestinationAddress.Value.ToString(),
+                        SourceProcessName = flowInformation.SourceApplication.ApplicationName,
+                        SourceProcessInstance = flowInformation.SourceApplication.ApplicationInstance,
+                        SourceEntityName = flowInformation.SourceApplication.EntityName,
+                        SourceEntityInstance = flowInformation.SourceApplication.EntityInstance,
+                        DestinationProcessName = flowInformation.DestinationApplication.ApplicationName,
+                        DestinationProcessInstance = flowInformation.DestinationApplication.ApplicationInstance,
+                        DestinationEntityName = flowInformation.DestinationApplication.EntityName,
+                        DestinationEntityInstance = flowInformation.DestinationApplication.EntityInstance
+                    };
+                    ulong cepId = 0;
+                    // ask the other side to open connection
+                    try
+                    {
+                        cepId = cep.RemoteObject.OpenConnection(connInfo);
+                    }
+                    catch (Exception e)
+                    {
+                        Trace.WriteLine($"Could not connect to remote site: {e.Message}", "ERROR");
+                    }
+                    if (cepId > 0)
+                    {
+                        cep.ConnectionId = cepId;
+                        _ConnectionEndpoints.Add(cep.Port.Id, cep.ConnectionId, cep);
+                        return cep.Port;
+                    }
+                }
+                return null;
+            }
+        }
+
+        public bool DataAvailable(Port port)
+        {
+            ConnectionEndpoint cep;
+            if (_ConnectionEndpoints.TryGetValue(primaryKey: port.Id, val: out cep))
+            {
+                return cep.ReceiveBuffer.AvailableBytes != 0;
+            }
+            return false;
+        }
+
+        public Task<bool> DataAvailableAsync(Port port, CancellationToken ct)
+        {
+            ConnectionEndpoint cep;
+            if (_ConnectionEndpoints.TryGetValue(primaryKey: port.Id, val: out cep))
+            {
+                return Task.Factory.StartNew(() => cep.ReceiveBuffer.WaitForData(ct));
+            }
+            return Task.Factory.StartNew(() => false);
+        }
+
+        public void DeregisterApplication(ApplicationNamingInfo appInfo)
+        {
+            lock (_generalLock)
+            {
+                this._registeredApplications.RemoveAll(x =>
+                {
+                    return appInfo.Matches(x.ApplicationInfo);
+                });
+            }
+        }
+
+        public void DeregisterApplication(ApplicationInstanceHandle appInfo, DeregisterApplicationOption option, TimeSpan timeout)
+        {
+            throw new NotImplementedException();
+        }
+
+        public void Disconnect(Port port, TimeSpan timeout)
+        {
+            lock (_connectionEndpointsLock)
+            {
+                ConnectionEndpoint cep;
+                if (_ConnectionEndpoints.TryGetValue(primaryKey: port.Id, val: out cep))
+                {
+                    cep.CommunicationObject.Close();
+                    cep.ReceiveBuffer.Dispose();
+                    _ConnectionEndpoints.Remove(primaryKey: port.Id);
+                }
+            }
+        }
+
+        // This code added to correctly implement the disposable pattern.
+        public void Dispose()
+        {
+            Dispose(true);
+        }
+
+        public PortInformationOptions GetPortInformation(Port port)
+        {
+            if (port == null) throw new ArgumentNullException("port");
+            PortInformationOptions opt = 0;
+            ConnectionEndpoint cep;
+            if (_ConnectionEndpoints.TryGetValue(primaryKey: port.Id, val: out cep))
+            {
+                opt |= cep.CommunicationObject.State == CommunicationState.Opened ? PortInformationOptions.Connected : 0;
+                opt |= cep.Blocking ? 0 : PortInformationOptions.NonBlocking;
+            }
+            return opt;
+        }
+        public byte[] Receive(Port port)
+        {
+            ConnectionEndpoint cep;
+            if (_ConnectionEndpoints.TryGetValue(primaryKey: port.Id, val: out cep))
+            {
+                var data = cep.ReceiveBuffer;
+                if (port.Blocking) data.WaitForData(Timeout.Infinite);
+                var buffer = new byte[data.AvailableBytes];
+                data.Read(buffer, 0, buffer.Length);
+                return buffer;
+            }
+            return null;
+        }
+
+        ApplicationInstanceHandle IRinaIpc.RegisterApplication(ApplicationNamingInfo appInfo, ConnectionRequestHandler reqHandler)
+        {
+            throw new NotImplementedException();
+        }
+
+        public int Send(Port port, byte[] buffer, int offset, int count)
+        {
+            ConnectionEndpoint cep;
+            if (_ConnectionEndpoints.TryGetValue(primaryKey: port.Id, val: out cep))
+            {
+                var dataToSent = new byte[count];
+                Buffer.BlockCopy(buffer, offset, dataToSent, 0, count);
+                var amount = cep.RemoteObject.PushData(cep.ConnectionId, dataToSent);
+                return amount;
+            }
+            return -1;
+        }
+
+        public void SetBlocking(Port port, bool value)
+        {
+            lock (_connectionEndpointsLock)
+            {
+                ConnectionEndpoint cep;
+                if (_ConnectionEndpoints.TryGetValue(primaryKey: port.Id, val: out cep))
+                {
+                    cep.Blocking = value;
+                }
+            }
+        }
+
+        /// <summary>
+        /// This method is called by the responder when flow, port and other necessary object should be created
+        /// for accepted request.
+        /// </summary>
+        /// <param name="connInfo"></param>
+        /// <returns></returns>
+        internal Port AllocateFlow(ConnectionInformation connInfo)
+        {
+            lock (_connectionEndpointsLock)
+            {
+                var flowInformation = connInfo.Reverse().GetFlowInformation();
+                ConnectionEndpoint cep = null;
+                if (allocateFlow(flowInformation, out cep))
+                {
+                    cep.ConnectionId = cep.Port.Id;
+                    _ConnectionEndpoints.Add(cep.Port.Id, cep.ConnectionId, cep);
+                    return cep.Port;
+                }
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Connects flow to the registered application IPC. Application can refuse the connection or provide a handler for
+        /// serving the requests. 
+        /// </summary>
+        /// <param name="connectionInformation">ConnectionInformation with hold properties of a new connection requested by the client side.</param>
+        /// <returns>A <see cref="Port"/> newly created for the communication.</returns>
+        internal Port ConnectToApplication(ConnectionInformation connectionInformation)
+        {
+            lock (_generalLock)
+            {
+                Trace.WriteLine($"Connection request to application '{connectionInformation.DestinationProcessName}'.", "INFO");
+
+                var app = _registeredApplications.Find(r => { return r.ApplicationInfo.ApplicationName.Equals(connectionInformation.DestinationProcessName, StringComparison.InvariantCultureIgnoreCase); });
+                if (app != null)
+                {
+                    AcceptFlowHandler flowHandler = null;
+                    var flowInfo = connectionInformation.Reverse().GetFlowInformation();
+                    var reply = ConnectionRequestResult.Reject;
+                    try
+                    {
+                        reply = app.RequestHandler(this, flowInfo, out flowHandler);
+                    }
+                    catch (Exception e)
+                    {
+                        Trace.WriteLine($"RequestHandler method of {app.ApplicationInfo.ApplicationName}:{e.Message}", "ERROR");
+                    }
+                    Trace.WriteLine($"Request handler of application '{connectionInformation.DestinationProcessName}' replied {reply}.", "INFO");
+                    if (reply == ConnectionRequestResult.Accept)
+                    {
+                        // now it is the right time to create all the object necessary for further communication:
+                        var port = AllocateFlow(connectionInformation);
+
+                        // excutes the handler on newly created Task
+                        // this taks is running on its own...                   
+                        Task.Run(async () =>
+                        {
+                            try { await flowHandler(this, flowInfo, port); }
+                            catch (Exception e) { Trace.WriteLine($"FlowHandler method of {app.ApplicationInfo.ApplicationName}: {e.Message}", "ERROR"); }
+
+                        }).ConfigureAwait(false);
+
+                        return port;
+                    }
+                    else
+                        return null;
+                }
+                else
+                {
+                    Trace.WriteLine($"Application '{connectionInformation.DestinationProcessName}' not found in local IPC.", "ERROR");
+                    return null;
+                }
+            }
+        }
+
+        protected virtual void Dispose(bool disposing)
+        {
+            lock (_disposeLock)
+            {
+                if (!_disposedValue)
+                {
+                    if (disposing)
+                    {
+                        closeServiceHost();
+                        Trace.WriteLine("IPC disposed.", "INFO");
+                    }
+
+                    this._registeredApplications = null;
+                    this._ConnectionEndpoints.Clear();
+                    _disposedValue = true;
+                }
+            }
         }
 
         /// <summary>
@@ -260,297 +427,171 @@ namespace System.Net.Rina.Shims
                 ReceiveBuffer = receiveBuffer,
                 CommunicationObject = commObject,
                 RemoteObject = remoteObject
-            };            
+            };
             return true;
         }
-            /// <summary>
-            /// Allocates a new flow based on provided flowInformation. This is used by the initiator of the flow request.
-            /// </summary>
-            /// <param name="flowInformation"></param>
-            /// <returns>The Port object that can be used for communication with remote party.</returns>
-        public Port AllocateFlow (FlowInformation flowInformation)
-		{
-            lock(_connectionEndpointsLock)
+
+        private void closeServiceHost()
+        {
+            if (_serviceHost.State == CommunicationState.Opened)
             {
-                var wipcPortname = flowInformation.DestinationAddress.Value.ToString();              
-                ConnectionEndpoint cep = null;
-                if (this.allocateFlow(flowInformation, out cep))
+                Trace.WriteLine($"Closing IPC service host (State='{this._serviceHost.State}').", "INFO");
+                foreach (var x in _ConnectionEndpoints)
                 {
-                    var connInfo = new ConnectionInformation()
-                    {
-                        SourceAddress = LocalAddress.Value.ToString(),
-                        DestinationAddress = flowInformation.DestinationAddress.Value.ToString(),
-                        SourceProcessName = flowInformation.SourceApplication.ProcessName,
-                        SourceProcessInstance = flowInformation.SourceApplication.ProcessInstance,
-                        SourceEntityName = flowInformation.SourceApplication.EntityName,
-                        SourceEntityInstance = flowInformation.SourceApplication.EntityInstance,
-                        DestinationProcessName = flowInformation.DestinationApplication.ProcessName,
-                        DestinationProcessInstance = flowInformation.DestinationApplication.ProcessInstance,
-                        DestinationEntityName = flowInformation.DestinationApplication.EntityName,
-                        DestinationEntityInstance = flowInformation.DestinationApplication.EntityInstance
-                    };
-                    ulong cepId = 0;
-                    // ask the other side to open connection
+                    var cep = x.Value;
                     try
                     {
-                        cepId = cep.RemoteObject.OpenConnection(connInfo);
+                        cep.RemoteObject.CloseConnection(cep.ConnectionId);
+                        cep.CommunicationObject.Close();
                     }
-                    catch (Exception e)
+                    catch (Exception)
                     {
-                        Trace.WriteLine($"Could not connect to remote site: {e.Message}", "ERROR");
-                    }
-                    if (cepId > 0)
-                    {
-                        cep.ConnectionId = cepId;
-                        _ConnectionEndpoints.Add(cep.Port.Id, cep.ConnectionId, cep);
-                        return cep.Port;
+                        Trace.WriteLine($"Remote site is not available (Address='{cep.FlowInformation.DestinationAddress}', Application='{cep.FlowInformation.DestinationApplication}').", "INFO");
                     }
                 }
-                return null;
             }
+            _serviceHost.Close();
         }
 
         /// <summary>
-        /// This method is called by the responder when flow, port and other necessary object should be created
-        /// for accepted request.
+        /// This class is used to hold properties of a new connection requested by the client side.
+        /// Information in this class is used to identify originator of the request as well as to 
+        /// find an application that should serve the request.
         /// </summary>
-        /// <param name="connInfo"></param>
-        /// <returns></returns>
-        internal Port AllocateFlow(ConnectionInformation connInfo)
+        [DataContract]
+        public class ConnectionInformation
         {
-            lock(_connectionEndpointsLock)
+            /// <summary>
+            /// Represents a destination Windows IPC port name.
+            /// </summary>
+            [DataMember]
+            public string DestinationAddress { get; set; }
+
+            [DataMember]
+            public string DestinationEntityInstance { get; set; }
+
+            [DataMember]
+            public string DestinationEntityName { get; set; }
+
+            [DataMember]
+            public string DestinationProcessInstance { get; set; }
+
+            /// <summary>
+            /// Represents a destination application naming information.
+            /// </summary>
+            [DataMember]
+            public string DestinationProcessName { get; set; }
+
+            /// <summary>
+            /// Represents a source Windows IPC port name.
+            /// </summary>
+            [DataMember]
+            public string SourceAddress { get; set; }
+            [DataMember]
+            public string SourceEntityInstance { get; set; }
+
+            [DataMember]
+            public string SourceEntityName { get; set; }
+
+            [DataMember]
+            public string SourceProcessInstance { get; set; }
+
+            /// <summary>
+            /// Represents a source application naming information.
+            /// </summary>
+            [DataMember]
+            public string SourceProcessName { get; set; }
+            /// <summary>
+            /// Gets a flow information object from the current connection information object.
+            /// </summary>
+            /// <returns>A FlowInformation object.</returns>
+            public FlowInformation GetFlowInformation()
             {
-                var flowInformation = connInfo.Reverse().GetFlowInformation();
-                ConnectionEndpoint cep = null;
-                if (allocateFlow(flowInformation, out cep))
+                var flowInfo = new FlowInformation()
                 {
-                    cep.ConnectionId = cep.Port.Id;                  
-                    _ConnectionEndpoints.Add(cep.Port.Id, cep.ConnectionId, cep);
-                    return cep.Port;
-                }
-                return null;
+                    SourceAddress = new Address(new Uri(this.SourceAddress)),
+                    DestinationAddress = new Address(new Uri(this.DestinationAddress)),
+                    SourceApplication = new ApplicationNamingInfo(this.SourceProcessName, this.SourceProcessInstance, this.SourceEntityName, this.SourceEntityInstance),
+                    DestinationApplication = new ApplicationNamingInfo(this.DestinationProcessName, this.DestinationProcessInstance, this.DestinationEntityName, this.DestinationEntityInstance)
+                };
+                return flowInfo;
+            }
+
+            public ConnectionInformation Reverse()
+            {
+                var rev = new ConnectionInformation()
+                {
+                    SourceAddress = this.DestinationAddress,
+                    DestinationAddress = this.SourceAddress,
+                    SourceProcessName = this.DestinationProcessName,
+                    SourceProcessInstance = this.DestinationProcessInstance,
+                    SourceEntityName = this.DestinationEntityName,
+                    SourceEntityInstance = this.DestinationEntityInstance,
+                    DestinationProcessName = this.SourceProcessName,
+                    DestinationProcessInstance = this.SourceProcessInstance,
+                    DestinationEntityName = this.SourceEntityName,
+                    DestinationEntityInstance = this.SourceEntityInstance
+                };
+                return rev;
+
             }
         }
 
-		public void DeallocateFlow (Port port)
-		{
-            lock(_connectionEndpointsLock)
-            {
-                ConnectionEndpoint cep;
-                if (_ConnectionEndpoints.TryGetValue(primaryKey: port.Id, val: out cep))
-                {
-                    cep.CommunicationObject.Close();
-                    cep.ReceiveBuffer.Dispose();
-                    _ConnectionEndpoints.Remove(primaryKey: port.Id);
-                }
-            }
-        }
-
-        public int Send(Port port, byte[] buffer, int offset, int count)
+        internal class ConnectionEndpoint
         {
-            ConnectionEndpoint cep;
-            if (_ConnectionEndpoints.TryGetValue(primaryKey: port.Id, val: out cep))
-            {                
-                var dataToSent = new byte[count];
-                Buffer.BlockCopy(buffer, offset, dataToSent, 0, count);
-                var amount = cep.RemoteObject.PushData(cep.ConnectionId, dataToSent);
-                return amount;
-            }
-            return -1;
+            /// <summary>
+            /// Specifies whether the port is blocking or non-blocking.
+            /// </summary>
+            internal bool Blocking;
+
+            /// <summary>
+            /// Object used to connect to the remote object.
+            /// </summary>
+            internal ICommunicationObject CommunicationObject;
+
+            /// <summary>
+            /// Connection Id is used to resolve to which connection data should be written as 
+            /// remote object is create as a singleton. Connection Id is set to PortId of the "server".
+            /// </summary>
+            internal ulong ConnectionId;
+
+            /// <summary>
+            /// Flow information that describes parameters of the current connection.
+            /// </summary>
+            internal FlowInformation FlowInformation;
+
+            /// <summary>
+            /// Stores the local Port object.
+            /// </summary>
+            internal Port Port;
+            /// <summary>
+            /// Local receive buffer. All data that are supposed for this flow are stored in this buffer.
+            /// </summary>
+            internal FifoStream ReceiveBuffer;
+
+            /// <summary>
+            /// Remote object that is used for sending and received data.
+            /// </summary>
+            internal IRemoteObject RemoteObject;
         }
-
-		public byte[] Receive (Port port)
-		{
-            ConnectionEndpoint cep;
-            if (_ConnectionEndpoints.TryGetValue(primaryKey: port.Id, val: out cep))
-            {
-                var data = cep.ReceiveBuffer;
-                if (port.Blocking) data.WaitForData(Timeout.Infinite);
-                var buffer = new byte[data.AvailableBytes];
-                data.Read(buffer, 0, buffer.Length);
-                return buffer;
-            }
-            return null;
-		}
-        
-
 		public void RegisterApplication (ApplicationNamingInfo appInfo, ConnectionRequestHandler reqHandler)
 		{
             lock(_generalLock)
             {
-                Trace.WriteLine($"Application '{appInfo.ProcessName}' registered at process {this.LocalAddress}.", "INFO");
+                Trace.WriteLine($"Application '{appInfo.ApplicationName}' registered at process {this.LocalAddress}.", "INFO");
                 this._registeredApplications.Add(new RegisteredApplication() { ApplicationInfo = appInfo, RequestHandler = reqHandler });
             }
 		}
 
-        public void DeregisterApplication(ApplicationNamingInfo appInfo)
+        public void Close(Port port)
         {
-            lock(_generalLock)
-            {
-                this._registeredApplications.RemoveAll(x =>
-                {
-                    return appInfo.Matches(x.ApplicationInfo);
-                });
-            }
+            throw new NotImplementedException();
         }
 
-        /// <summary>
-        /// Connects flow to the registered application IPC. Application can refuse the connection or provide a handler for
-        /// serving the requests. 
-        /// </summary>
-        /// <param name="connectionInformation">ConnectionInformation with hold properties of a new connection requested by the client side.</param>
-        /// <returns>A <see cref="Port"/> newly created for the communication.</returns>
-        internal Port ConnectToApplication(ConnectionInformation connectionInformation)
+        public int Receive(Port port, byte[] buffer, int offset, int size, PortFlags socketFlags)
         {
-            lock(_generalLock)
-            {
-                Trace.WriteLine($"Connection request to application '{connectionInformation.DestinationProcessName}'.", "INFO");
-
-                var app = _registeredApplications.Find(r => { return r.ApplicationInfo.ProcessName.Equals(connectionInformation.DestinationProcessName, StringComparison.InvariantCultureIgnoreCase); });
-                if (app != null)
-                {
-                    AcceptFlowHandler flowHandler = null;
-                    var flowInfo = connectionInformation.Reverse().GetFlowInformation();
-                    var reply = ConnectionRequestResult.Reject;
-                    try
-                    {
-                        reply = app.RequestHandler(this, flowInfo, out flowHandler);
-                    }
-                    catch(Exception e)
-                    {
-                        Trace.WriteLine($"RequestHandler method of {app.ApplicationInfo.ProcessName}:{e.Message}", "ERROR");
-                    }
-                    Trace.WriteLine($"Request handler of application '{connectionInformation.DestinationProcessName}' replied {reply}.", "INFO");
-                    if (reply == ConnectionRequestResult.Accept)
-                    {
-                        // now it is the right time to create all the object necessary for further communication:
-                        var port = AllocateFlow(connectionInformation);
-
-                        // excutes the handler on newly created Task
-                        // this taks is running on its own...                   
-                        Task.Run(async () => 
-                        {
-                            try { await flowHandler(this, flowInfo, port); }
-                            catch (Exception e) { Trace.WriteLine($"FlowHandler method of {app.ApplicationInfo.ProcessName}: {e.Message}", "ERROR"); }
-
-                        }).ConfigureAwait(false);
-
-                        return port;
-                    }
-                    else
-                        return null;
-                }
-                else
-                {
-                    Trace.WriteLine($"Application '{connectionInformation.DestinationProcessName}' not found in local IPC.", "ERROR");
-                    return null;
-                }
-            }
+            throw new NotImplementedException();
         }
-
-        public PortInformationOptions GetPortInformation(Port port)
-        {
-            if (port == null) throw new ArgumentNullException("port");
-            PortInformationOptions opt = 0;
-            ConnectionEndpoint cep;
-            if (_ConnectionEndpoints.TryGetValue(primaryKey:port.Id, val: out cep))
-            {
-                opt |= cep.CommunicationObject.State == CommunicationState.Opened ? PortInformationOptions.Connected : 0;
-                opt |= cep.Blocking ? 0 :  PortInformationOptions.NonBlocking;
-            }
-            return opt;
-        }
-
-        private bool _disposedValue = false; // To detect redundant calls
-        private object _disposeLock = new object();
-        protected virtual void Dispose(bool disposing) 
-        {
-            lock(_disposeLock)
-            {
-                if (!_disposedValue)
-                {
-                    if (disposing)
-                    {
-                        closeServiceHost();
-                        Trace.WriteLine("IPC disposed.", "INFO");
-                    }
-
-                    this._registeredApplications = null;
-                    this._ConnectionEndpoints.Clear();
-                    _disposedValue = true;
-                }
-            }
-        }
-        
-        private void closeServiceHost()
-        {
-            if (_serviceHost.State == CommunicationState.Opened)
-            {                
-                Trace.WriteLine($"Closing IPC service host (State='{this._serviceHost.State}').", "INFO");
-                foreach (var x in _ConnectionEndpoints)
-                {
-                    var cep = x.Value;                                        
-                    try {
-                        cep.RemoteObject.CloseConnection(cep.ConnectionId);
-                        cep.CommunicationObject.Close();
-                    } catch (Exception)
-                    {
-                        Trace.WriteLine($"Remote site is not available (Address='{cep.FlowInformation.DestinationAddress}', Application='{cep.FlowInformation.DestinationApplication}').", "INFO");
-                    }                
-                }
-            }
-            _serviceHost.Close();            
-        }
-
-        // This code added to correctly implement the disposable pattern.
-        public void Dispose()
-        {
-            Dispose(true);
-        }
-
-        public void SetBlocking(Port port, bool value)
-        {
-            lock(_connectionEndpointsLock)
-            {
-                ConnectionEndpoint cep;
-                if (_ConnectionEndpoints.TryGetValue(primaryKey: port.Id, val: out cep))
-                {
-                    cep.Blocking = value;                
-                }
-            }
-        }
-
-        public int AvailableData(Port port)
-        {
-            ConnectionEndpoint cep;
-            if (_ConnectionEndpoints.TryGetValue(primaryKey: port.Id, val: out cep))
-            {
-                return cep.ReceiveBuffer.AvailableBytes;
-            }
-            return -1;
-        }
-
-        public Task<bool> DataAvailableAsync(Port port, CancellationToken ct)
-        {
-            ConnectionEndpoint cep;
-            if (_ConnectionEndpoints.TryGetValue(primaryKey: port.Id, val: out cep))
-            {
-                return Task.Factory.StartNew(() => cep.ReceiveBuffer.WaitForData(ct));
-            }
-            return Task.Factory.StartNew(() => false);
-        }
-
-        public bool DataAvailable(Port port)
-        {
-            ConnectionEndpoint cep;
-            if (_ConnectionEndpoints.TryGetValue(primaryKey: port.Id, val: out cep))
-            {
-                return cep.ReceiveBuffer.AvailableBytes != 0;
-            }
-            return false;
-        }
-
-
         #region Nested classes
         internal class RegisteredApplication
         {
@@ -564,8 +605,8 @@ namespace System.Net.Rina.Shims
         [ServiceBehavior(InstanceContextMode = InstanceContextMode.Single, IncludeExceptionDetailInFaults = true)]
         internal class RemoteObject : IRemoteObject
         {
-            WcfIpcProcess _parentObject;
             ChannelFactory<IRemoteObject> _channel;
+            WcfIpcProcess _parentObject;
             public RemoteObject(WcfIpcProcess parent)
             {
                 this._parentObject = parent;

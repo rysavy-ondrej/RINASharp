@@ -6,12 +6,13 @@ using System.Text;
 using System.Threading.Tasks;
 using System.IO;
 using System.IO.Pipes;
+using System.Diagnostics;
 
 namespace System.Net.Rina.Shims
 {
 
 
-    public enum PipeMessageType { ConnectRequest, ConnectResponse, Data }
+    public enum PipeMessageType { ConnectRequest, ConnectResponse, DisconnectRequest, DisconnectResponse, Data }
     /// <summary>
     /// Represents message used for data communication in <see cref="PipeIpcProcess"/> DIF.
     /// </summary>
@@ -121,7 +122,7 @@ namespace System.Net.Rina.Shims
     [Serializable]
     public class PipeDataMessage : PipeMessage
     {
-        public PacketDotNet.Utils.ByteArraySegment Data;
+        public ArraySegment<byte> Data;
 
         public override PipeMessageType MessageType
         {
@@ -134,8 +135,8 @@ namespace System.Net.Rina.Shims
         protected override void Serialize(BinaryWriter writer, PipeMessageType mtype)
         {
             base.Serialize(writer, mtype);
-            writer.Write(Data.Length);
-            writer.Write(Data.Bytes, Data.Offset, Data.Length);
+            writer.Write(Data.Count);
+            writer.Write(Data.Array, Data.Offset, Data.Count);
         }
 
         protected override void Deserialize(BinaryReader reader)
@@ -143,7 +144,7 @@ namespace System.Net.Rina.Shims
             base.Deserialize(reader);
             var len = reader.ReadInt32();
             var bytes = reader.ReadBytes(len);
-            Data = new PacketDotNet.Utils.ByteArraySegment(bytes);
+            Data = new ArraySegment<byte>(bytes);
         }
 
     }
@@ -233,6 +234,149 @@ namespace System.Net.Rina.Shims
             Result = (ConnectResult)reader.ReadByte();
             RequesterCepId = reader.ReadUInt64();
             ResponderCepId = reader.ReadUInt64();
+        }
+    }
+
+    /// <summary>
+    /// Specifies a way used for closing the connection.
+    /// </summary>
+    public enum DisconnectFlags : int {
+        /// <summary>
+        /// Connection is aborted that means all pending data should be discarded.
+        /// </summary>
+        Abort = 1,
+        /// <summary>
+        /// Connection will be closed gracefully. Pending data will be processed and
+        /// then the connection will close.
+        /// </summary>
+        Gracefull = 2, 
+        /// <summary>
+        /// Indicates that we have no more data to send for this connection.
+        /// </summary>
+        Close = 3
+    };
+    /// <summary>
+    /// Disconnect message. It specifies the way the disconnection will be performed.
+    /// </summary>
+    /// <remarks>
+    /// Abortive shutdown sequence - all incoming messages will be discarded.
+    /// Graceful shutdown, delaying return until either shutdown sequence completes or a specified time interval elapses.
+    /// 
+    /// </remarks>
+    public sealed class PipeDisconnectRequest : PipeMessage
+    {
+
+        public DisconnectFlags Flags;
+        public override PipeMessageType MessageType
+        {
+            get
+            {
+                return PipeMessageType.DisconnectRequest;
+            }
+        }
+        protected override void Serialize(BinaryWriter writer, PipeMessageType mtype)
+        {
+            base.Serialize(writer, mtype);
+            writer.Write((int)Flags);
+        }
+
+        protected override void Deserialize(BinaryReader reader)
+        {
+            base.Deserialize(reader);
+            Flags = (DisconnectFlags)reader.ReadInt32();
+        }
+    }
+
+    public sealed class PipeDisconnectResponse : PipeMessage
+    {
+        public DisconnectFlags Flags;
+        public override PipeMessageType MessageType
+        {
+            get
+            {
+                return PipeMessageType.DisconnectResponse;
+            }
+        }
+        protected override void Serialize(BinaryWriter writer, PipeMessageType mtype)
+        {
+            base.Serialize(writer, mtype);
+            writer.Write((int)Flags);
+        }
+
+        protected override void Deserialize(BinaryReader reader)
+        {
+            base.Deserialize(reader);
+            Flags = (DisconnectFlags)reader.ReadInt32();
+        }
+    }
+
+
+    internal static class PipeMessageEncoder
+    {
+        internal static PipeMessage ReadMessage(byte[] data, int offset, int bytes)
+        {
+            Trace.TraceInformation($"readMessageFromPipe: Message {bytes}B: {BitConverter.ToString(data, 0, bytes)}");
+            using (var ms = new MemoryStream(data, 0, bytes))
+            {
+                try
+                {
+                    return PipeMessage.Deserialize(ms);
+                }
+                catch (Exception e)
+                {
+                    Trace.TraceError($"{nameof(ReadMessage)}: Error when deserializing message: {e.Message}");
+                    return null;
+                }
+            }
+        }
+
+        internal static PipeMessage ReadMessage(PipeStream pipeStream)
+        {
+            var buffer = new byte[128];
+            using (var ms = new MemoryStream())
+            {
+                do
+                {
+                    var len = pipeStream.Read(buffer, 0, buffer.Length);
+                    if (len < 0) break;
+                    ms.Write(buffer, 0, len);
+                }
+                while (!pipeStream.IsMessageComplete);
+                var count = (int)ms.Position;
+                ms.Position = 0;
+                Trace.TraceInformation($"readMessageFromPipe: Message {count}B: {BitConverter.ToString(ms.GetBuffer(), 0, count)}");
+                try
+                {
+                    return PipeMessage.Deserialize(ms);
+                }
+                catch (Exception e)
+                {
+                    Trace.TraceError($"{nameof(ReadMessage)}: Error when deserializing message: {e.Message}");
+                    return null;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Writes a <see cref="PipeMessage<"/> to a specified <see cref="PipeStream"/>.
+        /// It uses intermediate buffer represented by <see cref="MemoryStream"/> 
+        /// because each calling of <see cref="PipeStream.Write(byte[], int, int)"/> 
+        /// creates a new message.
+        /// </summary>
+        /// <param name="pipeStream">A <see cref="PipeStream"/> to which the message is written.</param>
+        /// <param name="message">An object derived from <see cref="PipeMessage"/> representing the message.</param>
+        /// <returns>The number of bytes written to the <see cref="PipeStream"/> object.</returns>
+        internal static int WriteMessage(PipeMessage message, Stream pipeStream)
+        {
+            using (var ms = new MemoryStream())
+            {
+                message.Serialize(ms);
+                var buf = ms.GetBuffer();
+                var count = (int)ms.Position;
+                Trace.TraceInformation($"writeMessageToPipe: Message {count}B: {BitConverter.ToString(buf, 0, count)}");
+                pipeStream.Write(buf, 0, count);
+                return count;
+            }
         }
     }
 }

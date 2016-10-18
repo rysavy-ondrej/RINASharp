@@ -21,10 +21,25 @@
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 //
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 namespace System.Net.Rina
 {
+
+    public enum DeregisterApplicationOption { WaitForCompletition, DisconnectClients }
+    public class ApplicationInstanceHandle
+    {
+        /// <summary>
+        /// Value that identifies an instance of the application.
+        /// </summary>
+        public Guid Handle { internal get; set; }
+
+        public ApplicationInstanceHandle()
+        {
+            Handle = Guid.NewGuid();
+        }
+    }
     /// <summary>
     /// The result of connection request.
     /// </summary>
@@ -59,16 +74,27 @@ namespace System.Net.Rina
 
 
         /// <summary>
-        /// Allocates the new flow according the specified information.
+        /// Creates a new connection and connects it to a new <see cref="Port"/>.
         /// </summary>
         /// <returns>The flow.</returns>
         /// <param name="flow">Flow information object.</param>
-        Port AllocateFlow (FlowInformation flow);
+        Port Connect (FlowInformation flow);
 		/// <summary>
-		/// Deallocates the flow associated with the provided port.
+		/// Disconnects the specifies port from the connection and closes the connection.
 		/// </summary>
 		/// <param name="port">Port descriptor.</param>
-		void DeallocateFlow (Port port);
+		void Disconnect (Port port, TimeSpan timeout);
+
+        /// <summary>
+        /// Aborts the connection of the specified <see cref="Port"/>. 
+        /// See documentation for details on the difference between <see cref="Abort(Port)"/> and <see cref="Disconnect(Port)"/>.
+        /// </summary>
+        /// <param name="port"></param>
+        void Abort(Port port);
+
+
+        void Close(Port port);
+
         /// <summary>
         /// Sets whether the given port will have blocking or non-blocking behavior.
         /// </summary>
@@ -95,15 +121,18 @@ namespace System.Net.Rina
 
 
         /// <summary>
-        /// Reads the available data from the specified port. Depending on port settings, data are read by 
-        /// alinged to SDU boundaries. 
+        /// Reads the available data from the specified port. 
         /// </summary>
         /// <param name="port">Port object used for receiving data from.</param>
         /// <returns>Buffer containing data received.</returns>
-        byte[] Receive(Port port);
+        int Receive(Port port, byte[] buffer, int offset, int size, PortFlags socketFlags);
 
 
-
+        /// <summary>
+        /// Tests if <see cref="Port"/> has some available data.
+        /// </summary>
+        /// <param name="port"></param>
+        /// <returns></returns>
         bool DataAvailable(Port port);
 
         /// <summary>
@@ -116,18 +145,19 @@ namespace System.Net.Rina
         /// </returns>
         Task<bool> DataAvailableAsync(Port port, CancellationToken ct);
 
+        /// <summary>
+        /// Registers the application name in the current IPC. An application serves new flows that are passed
+        /// to the application using provided RequestHandler delegate.
+        /// </summary>
+        /// <param name="appInfo">An application information describing the application.</param>
+        /// <param name="reqHandler">Request handler used to determine if new connection can be accepted.</param>
+        /// <returns><see cref="ApplicationInstanceHandle"/> that identifies the registered application. </returns>
+        ApplicationInstanceHandle RegisterApplication (ApplicationNamingInfo appInfo, ConnectionRequestHandler reqHandler);
 		/// <summary>
-		/// Registers the application name in the current IPC. An application serves new flows that are passed
-		/// to the application using provided RequestHandler delegate.
+		/// Removes the registration of the application specified by <see cref="ApplicationInstanceHandle"/>.
 		/// </summary>
-		/// <param name="appInfo">App info.</param>
-		/// <param name="reqHandler">Req handler.</param>
-		void RegisterApplication (ApplicationNamingInfo appInfo, ConnectionRequestHandler reqHandler);
-		/// <summary>
-		/// Deregisters the application.
-		/// </summary>
-		/// <param name="appInfo">App info.</param>
-		void DeregisterApplication (ApplicationNamingInfo appInfo);
+		/// <param name="appInfo"><see cref="ApplicationInstanceHandle"/> that identifies application instance to remove.</param>
+		void DeregisterApplication (ApplicationInstanceHandle appInfo, DeregisterApplicationOption option, TimeSpan timeout);
 	}
 
 }

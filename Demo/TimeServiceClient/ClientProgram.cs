@@ -32,13 +32,14 @@ using System.Linq;
 using System.Net.Rina;
 using System.Net.Rina.Shims;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace TimeServiceClient
 {
 
     /// <summary>
-    /// Inmplements a simple program that prints time information by querying TimeService.
+    /// Implements a simple program that prints time information by querying TimeService.
     /// </summary>
     class ClientProgram : ConsoleApplication
     {
@@ -113,9 +114,9 @@ namespace TimeServiceClient
             Trace.WriteLine($"APP-NAME:    {appName}", "INFO");
 
 
-            using (var ipcHost = new IpcHost())
+            using (var host = new IpcHost())
             {
-                var ipc = IpcProcessFactory.CreateProcess(difType, $"{ClientName}.{Process.GetCurrentProcess().Id.ToString()}");
+                var ipc = IpcProcessFactory.CreateProcess(host, difType, $"{ClientName}.{Process.GetCurrentProcess().Id.ToString()}");
                 var flowInformation = new FlowInformation()
                 {
                     SourceApplication = new ApplicationNamingInfo("TimeClient", "1", "TimeServiceProtocol", "1"),
@@ -124,23 +125,21 @@ namespace TimeServiceClient
                     DestinationAddress = Address.PipeAddressUri("localhost", ipcAddress)
                 };
 
-                var port = ipc.AllocateFlow(flowInformation);
+                var port = ipc.Connect(flowInformation);
                 if (port != null)
                 {
                     var cmdBytes = Encoding.ASCII.GetBytes("DateTime.Now\n");
-                    ipc.Send(port, cmdBytes, 0, cmdBytes.Length);
-                    var answerBuffer = ipc.Receive(port);
+                    port.Send(cmdBytes, 0, cmdBytes.Length);
+                    var answerBuffer = port.Receive();
                     var answerString = Encoding.ASCII.GetString(answerBuffer, 0, answerBuffer.Length);
                     Console.WriteLine($"Current remote time is: {answerString}");
-                    Trace.WriteLine("Deallocating Flow...", "INFO");
-                    ipc.DeallocateFlow(port);
-                    Trace.WriteLine("Disposing IpcProcess...", "INFO");
-                    ipc.Dispose();
-                    Trace.WriteLine("Bye.");
+                    Trace.TraceInformation("Closing port...");
+                    port.Shutdown(Timeout.InfiniteTimeSpan);               
+                    Trace.WriteLine("Done, Bye.");
                 }
                 else
                 {
-                    Trace.WriteLine($"Cannot connect to {flowInformation.DestinationApplication}@{flowInformation.DestinationAddress}.", "ERROR");
+                    Trace.TraceError($"Connection refused to {flowInformation.DestinationApplication}@{flowInformation.DestinationAddress}.");
                 }
             }
         }

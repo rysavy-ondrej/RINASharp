@@ -3,24 +3,66 @@
 //
 //
 //
-using System;
-using System.IO.Pipes;
-using System.Threading;
-using System.Security.AccessControl;
-using System.Security.Principal;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Threading.Tasks;
 using System.IO;
-using System.Linq;
-using System.Runtime.Serialization.Formatters.Binary;
-using PacketDotNet.Utils;
+using System.IO.Pipes;
+using System.Security.AccessControl;
+using System.Security.Principal;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Threading.Tasks.Dataflow;
 
 namespace System.Net.Rina.Shims
 {
+    /// <summary>
+    /// Specifies whether a connection is open or closed, connecting , or closing.
+    /// </summary>
+    public enum ConnectionState
+    {
+        /// <summary>
+        /// Connection is open.
+        /// </summary>
+        Open,
 
+        /// <summary>
+        /// Connection is tracked but it is closed.
+        /// </summary>
+        Closed,
 
+        /// <summary>
+        /// Connection is being connected. The initialization is in progress.
+        /// </summary>
+        Connecting,
+
+        /// <summary>
+        /// Connection is currently closing (it may be in graceful shutdown process).
+        /// </summary>
+        Closing,
+
+        /// <summary>
+        /// Connection is not being tracked by the context.
+        /// </summary>
+        Detached
+    }
+
+    // Interface for user code to receive notifications regarding pipe messages
+    internal interface IPipeCallback
+    {
+        void OnAsyncConnect(PipeStream pipe, out Object state);
+
+        void OnAsyncDisconnect(PipeStream pipe, Object state);
+
+        void OnAsyncMessage(PipeStream pipe, Byte[] data, Int32 bytes, Object state);
+    }
+
+    // Internal data associated with pipes
+    internal struct PipeData
+    {
+        public Byte[] data;
+        public PipeStream pipe;
+        public Object state;
+    };
 
     /// <summary>
     /// This is implementation of IpcProcess for ShimDif that employs NamedPipes for communication.
@@ -28,43 +70,59 @@ namespace System.Net.Rina.Shims
     [ShimIpc("NamedPipe")]
     public class PipeIpcProcess : IpcProcessBase, IPipeCallback
     {
+        private const int pipeConnectTimeout = 10000;
+
+        private readonly object _portManagementSync = new Object();
 
         /// <summary>
         /// Used for synchronization of operations on <see cref="PipeIpcProcess"/> object. Use in this pattern: lock(_generalLock) {  ...  }.
         /// </summary>
-        object _generalLock = new object();
+        private readonly object _syncRoot = new Object();
 
+        /// <summary>
+        /// A <see cref="Dictionary{TKey, TValue}"/> of <see cref="PipeClient"/> associated with their UNC name.
+        /// </summary>
+        private Dictionary<string, WeakReference<PipeClient>> _pipeClients = new Dictionary<string, WeakReference<PipeClient>>();
 
         /// <summary>
         /// <see cref="PipeServer"/> object that maintains all incoming Pipe connections.
         /// </summary>
-        PipeServer _pipeServer;
-        /// <summary>
-        /// A <see cref="Dictionary{TKey, TValue}"/> of <see cref="PipeClient"/> associated with their UNC name.
-        /// </summary>
-        Dictionary<string, WeakReference<PipeClient>> _pipeClients = new Dictionary<string, WeakReference<PipeClient>>();
+        private PipeServer _pipeServer;
 
-        /// <summary>
-        /// The <see cref="Address"/> of the current <see cref="PipeIpcProcess"/> instance. 
-        /// </summary>
-        Address _localAddress;
+        private PipeIpcProcess(string localAddress)
+        {
+            var localhost = System.Net.Dns.GetHostEntry("").HostName;
+            _localAddress = Address.PipeAddressUnc(localhost, localAddress);
+            _pipeServer = new PipeServer(localAddress, this, 1);
+        }
+
+        public delegate void InvalidMessageReceivedEventHandler(object sender, Port port, PipeMessage message, MessageValidationResult info);
+
+        public delegate void MessageDroppedEventHandler(object sender, Port port, PipeMessage message, PortError reason);
+
+        public event InvalidMessageReceivedEventHandler InvalidMessageReceived;
+
+        public event MessageDroppedEventHandler MessageDropped;
+
+        [Flags]
+        public enum MessageValidationResult : int { None = 0, DestinationCepId = 0x01, DestinationAddress = 0x02, SourceAddress = 0x04, MessageType = 0x08, NotRecognized = 0x10 }
 
         /// <summary>
         /// Creates a new <see cref="PipeIpcProcess"/> object using the provided <paramref name="localAddress"/> as the address.
         /// </summary>
-        /// <param name="localAddress">A string representing local name of the process. It is used to assembly <see cref="Address"/> 
-        /// that is represented by <see cref="Uri"/> of the form "\\localhost\localAddress". 
+        /// <param name="localAddress">A string representing local name of the process. It is used to assembly <see cref="Address"/>
+        /// that is represented by <see cref="Uri"/> of the form "\\localhost\localAddress".
         /// </param>
         /// <returns>A new <see cref="PipeIpcProcess"/> object of the given address.</returns>
         /// <exception cref="ArgumentException">Thrown if the provide address is invalid or it already occupied.</exception>
-        internal static IRinaIpc Create(string localAddress)
+        internal static IRinaIpc Create(IpcHost host, string localAddress)
         {
             IRinaIpc instance = null;
             try
             {
-                instance = new PipeIpcProcess(localAddress);
+                instance = new PipeIpcProcess(localAddress) { Host = host };
             }
-            catch(Exception e)
+            catch (Exception e)
             {
                 throw new ArgumentException($"Cannot create IPC process for {localAddress}, {e.Message}.", nameof(localAddress));
             }
@@ -73,328 +131,18 @@ namespace System.Net.Rina.Shims
         }
 
         /// <summary>
-        /// Represents allocated flows/connections.
-        /// This maps represents a function: [LocalCepId, RemoteCepId] -> ConnectionEndpoint. 
+        /// Gets the <see cref="ConnectionState"/> of the connection end point specified by the <paramref name="cepid"/>.
         /// </summary>
-        MultiKeyDictionary<ulong, ulong, ConnectionEndpoint> _allocatedConnections = new MultiKeyDictionary<ulong, ulong, ConnectionEndpoint>();
-
-        /// <summary>
-        /// Represents deallocated flows/connections.
-        /// This maps represents a function: [PortId, ConnectionId] -> ConnectionEndpoint. 
-        /// </summary>
-        /// <remarks>
-        /// Connections rest for a while in this map before they are removed. It is because some operation 
-        /// may be still in progress that would require an access to connection information.
-        /// </remarks>
-        MultiKeyDictionary<ulong, ulong, ConnectionEndpoint> _deallocatedConnections = new MultiKeyDictionary<ulong, ulong, ConnectionEndpoint>();
-
-        private PipeIpcProcess(string localAddress)
+        /// <param name="cepid"></param>
+        /// <returns>One of the connection state as defined by <see cref="ConnectionState"/>. </returns>
+        internal ConnectionState GetConnectionState(UInt64 cepid)
         {
-            _localAddress = Address.PipeAddressUnc("localhost", localAddress);
-            _pipeServer = new PipeServer(localAddress, this, 1);            
+            if (_connectionsOpen.ContainsKey(cepid)) return ConnectionState.Open;
+            if (_connectionsClosed.ContainsKey(cepid)) return ConnectionState.Closed;
+            if (_connectionsConnecting.ContainsKey(cepid)) return ConnectionState.Connecting;
+            if (_connectionsClosing.ContainsKey(cepid)) return ConnectionState.Closing;
+            return ConnectionState.Detached;
         }
-
-        public override Address LocalAddress
-        {
-            get
-            {
-                return _localAddress;
-            }
-        }
-
-
-        object _portManagementLock = new object();
-        Dictionary<ulong, Port> _allPorts = new Dictionary<ulong, Port>();
-        Random _rand = new Random();
-        private Port getFreshPort()
-        {
-            uint portId = 0;
-            lock (_portManagementLock)
-            {
-                do
-                {
-                    portId = (uint)(((long)_rand.Next()) - (long)Int32.MinValue);
-                } while (this._allPorts.ContainsKey(portId));
-                var port = new Rina.Port(this, portId);
-                _allPorts.Add(portId, port);
-                return port;
-            }            
-        }
-        private void releasePort(Port port)
-        {
-            lock(_portManagementLock)
-            {
-                _allPorts.Remove(port.Id);
-            }
-        }
-
-
-        /// <summary>
-        /// Allocates the new flow according to the specified information.
-        /// </summary>
-        /// <remarks>
-        /// <see cref="AllocateFlow(FlowInformation)"/> serves for two purposes known from <see cref="Sockets.Socket"/> programming:
-        /// (i) it locally creates a new <see cref="Port"/> and (ii) it connects the newly created <see cref="Port"/> 
-        /// as specified in <see cref="FlowInformation"/>.
-        /// </remarks>
-        /// <returns><see cref="Port"/> object that describes the newly allocated flow.</returns>
-        /// <param name="flowInfo">Flow information object.</param>
-        public override Port AllocateFlow(FlowInformation flowInfo)
-        {
-            if (flowInfo.DestinationAddress.Family != Address.Uri)
-                throw new ArgumentException($"Address family of provided DestinationAddress is different than AddressFamily.NamedPipe.", nameof(flowInfo));
-
-            var ci = new ConnectionInformation()
-            {
-                SourceAddress = flowInfo.SourceAddress,
-                SourceApplication = flowInfo.SourceApplication,
-                DestinationAddress = flowInfo.DestinationAddress,
-                DestinationApplication = flowInfo.DestinationApplication
-            };
-
-            var port = getFreshPort();
-            var pipeClient = getOrCreatePipeClient(flowInfo.DestinationAddress);
-
-            var remoteCepid = 0ul;
-            var connectResult = connect(pipeClient, ci, port.Id, out remoteCepid);
-            switch (connectResult)
-            {
-                case ConnectResult.Accept:
-                    var cep = new ConnectionEndpoint()
-                    {
-                        Blocking = true,
-                        Information = ci,
-                        Port = port,
-                        LocalCepId = port.Id,
-                        RemoteCepId = remoteCepid,
-                        PipeClient = pipeClient,
-                        Connected = true,
-                    };
-                    _allocatedConnections.Add(port.Id, remoteCepid, cep);
-                    return port;
-                case ConnectResult.AuthenticationRequired:
-                    throw new NotImplementedException();
-                case ConnectResult.Reject:
-                    Trace.TraceInformation($"Connection rejected by the remote process.");
-                    releasePort(port);
-                    return null;
-                case ConnectResult.Fail:
-                    Trace.TraceInformation($"Connection failed for an unknown reason.");
-                    releasePort(port);
-                    return null;
-                default:
-                    releasePort(port);
-                    return null;
-            }
-        }
-
-        const int pipeConnectTimeout =10000;
-        private ConnectResult connect(PipeClient pipeClient, ConnectionInformation ci, ulong localCepid, out ulong remoteCepid)
-        {
-            return connect(pipeClient.Stream, ci.SourceAddress, ci.DestinationAddress, ci.SourceApplication.ProcessName, ci.DestinationApplication.ProcessName, localCepid, out remoteCepid);
-        }
-
-        /// <summary>
-        /// Gets existing or creates a new <see cref="PipeClient"/> object for the specified <paramref name="destinationAddress"/>.
-        /// </summary>
-        /// <param name="destinationAddress"><see cref="Address"/> object of type <see cref="Address.Uri"/> that specifies remote pipe server address.</param>
-        /// <returns><see cref="PipeClient"/> object that should be connected to a pipe server with specified <paramref name="destinationAddress"/>.</returns>
-        /// <remarks>
-        /// This methods attempts to create and connect a new <see cref="PipeClient"/> object. For each remote endpoint 
-        /// there should be exactly one <see cref="PipeClient"/> object that is shared for all communication.
-        /// While this method attempts to connect the <see cref="PipeClient"/> the caller should check that the pipe is really connected.
-        /// </remarks>
-        private PipeClient getOrCreatePipeClient(Address destinationAddress)
-        {
-            var addressKey = (destinationAddress.Value as Uri)?.ToString();
-            if (addressKey == null) throw new ArgumentException("Provided address is not of expected AddressFamily. Only Address.Uri family is accepted.", nameof(destinationAddress));
-            PipeClient pipeClient;
-            WeakReference<PipeClient> pipeClientReference;
-            if (!_pipeClients.TryGetValue(addressKey, out pipeClientReference))
-            {   // create a new object
-                Trace.TraceInformation($"{nameof(getOrCreatePipeClient)}: pipeClient associated with key {addressKey} cannot be found, I will create new pipeClient.");
-                pipeClient = PipeClient.Create(destinationAddress);
-                pipeClientReference = new WeakReference<PipeClient>(pipeClient);
-                _pipeClients[addressKey] = pipeClientReference;
-            }            
-            if (!pipeClientReference.TryGetTarget(out pipeClient))
-            {   // recreate a new object
-                Trace.TraceInformation($"{nameof(getOrCreatePipeClient)}: pipeClient with key {addressKey} is dead, I will recreate it.");
-                pipeClient = PipeClient.Create(destinationAddress);
-                pipeClientReference.SetTarget(pipeClient);
-            }
-
-            if (!pipeClient.IsConnected) pipeClient.Connect(pipeConnectTimeout);
-            return pipeClient;
-        }
-
-        /// <summary>
-        /// Connects to other endpoint specified by address and application name. 
-        /// </summary>
-        /// <param name="pipeStream"></param>
-        /// <param name="sourceAddress"></param>
-        /// <param name="destinationAddress"></param>
-        /// <param name="sourceApplication"></param>
-        /// <param name="destinationApplication"></param>
-        /// <param name="sourceCepid"></param>
-        /// <returns>Returns CepId of the remote end point or 0 if the connection failed.</returns>
-        ConnectResult connect(PipeStream pipeStream, Address sourceAddress, Address destinationAddress, string sourceApplication, string destinationApplication, ulong sourceCepid, out ulong remoteCepid)
-        {
-            var connectRequest = new PipeConnectRequest()
-            {
-                RequesterCepId = sourceCepid,
-                DestinationAddress = destinationAddress,
-                DestinationApplication = destinationApplication,
-                DestinationCepId = 0,
-                SourceAddress = sourceAddress,
-                SourceApplication = sourceApplication
-            };
-
-            // Message needs to be written at once, as we are working in message mode:
-            writeMessageToPipe(pipeStream, connectRequest);
-            // wait for response:
-            
-            var response = readMessageFromPipe(pipeStream) as PipeConnectResponse;
-            if (response == null || response?.Result == ConnectResult.Fail)
-            {
-                remoteCepid = 0;
-                return ConnectResult.Fail;
-
-            }
-            else
-            {
-                remoteCepid = response.ResponderCepId;
-                return response.Result;
-            }
-        }
-
-
-        /// <summary>
-        /// Writes <see cref="PipeMessage<"/> to <see cref="PipeStream"/>.
-        /// It uses intermediate buffer represented by <see cref="MemoryStream"/> 
-        /// because each calling of <see cref="PipeStream.Write(byte[], int, int)"/> 
-        /// creates a new message.
-        /// </summary>
-        /// <param name="pipeStream">A <see cref="PipeStream"/> to which the message is written.</param>
-        /// <param name="message">An object derived from <see cref="PipeMessage"/> representing the message.</param>
-        /// <returns>The number of bytes written to the <see cref="PipeStream"/> object.</returns>
-        static int writeMessageToPipe(PipeStream pipeStream, PipeMessage message)
-        {
-            using (var ms = new MemoryStream())
-            {
-                message.Serialize(ms);
-                var buf = ms.GetBuffer();
-                var count = (int)ms.Position;
-                Trace.TraceInformation($"writeMessageToPipe: Message {count}B: {BitConverter.ToString(buf, 0, count)}");
-                pipeStream.Write(buf, 0, count);
-                return count;
-            }
-        }
-        static PipeMessage readMessageFromPipe(PipeStream pipeStream)
-        {
-            var buffer = new byte[128];
-            using (var ms = new MemoryStream())
-            {
-                do
-                {
-                    var len = pipeStream.Read(buffer, 0, buffer.Length);
-                    if (len < 0) break;
-                    ms.Write(buffer, 0, len);
-                }
-                while (!pipeStream.IsMessageComplete);
-                var count = (int)ms.Position;
-                ms.Position = 0;
-                Trace.TraceInformation($"readMessageFromPipe: Message {count}B: {BitConverter.ToString(ms.GetBuffer(), 0, count)}");
-                try
-                {
-                    return PipeMessage.Deserialize(ms);
-                }
-                catch(Exception e)
-                {
-                    Trace.TraceError($"{nameof(readMessageFromPipe)}: Error when deserializing message: {e.Message}");
-                    return null;
-                }
-            }
-        }
-        private PipeMessage readMessageFromBuffer(byte[] data, int bytes)
-        {
-            Trace.TraceInformation($"readMessageFromPipe: Message {bytes}B: {BitConverter.ToString(data, 0, bytes)}");
-            using (var ms = new MemoryStream(data, 0, bytes))
-            {
-                try
-                {
-                    return PipeMessage.Deserialize(ms);
-                }
-                catch (Exception e)
-                {
-                    Trace.TraceError($"{nameof(readMessageFromPipe)}: Error when deserializing message: {e.Message}");
-                    return null;
-                }
-            }
-        }
-
-
-        public override bool DataAvailable(Port port)
-        {
-            ConnectionEndpoint cep;
-            if (_allocatedConnections.TryGetValue(primaryKey: port.Id, val: out cep))
-            {
-                if (cep.ReceiveBuffer != null) return true;
-                if (cep.ReceiveQueue.Count > 0) return true;
-            }
-            return false;
-        }
-
-        /// <summary>
-        /// This task finishes when the data are available for the given port.
-        /// </summary>
-        /// <param name="port"></param>
-        /// <returns> If, when the task completes, its Result is true, more output is available in the source 
-        /// (though another consumer of the source may retrieve the data). If it returns false, more output 
-        /// is not and will never be available</returns>
-        public override Task<bool> DataAvailableAsync(Port port, CancellationToken ct)
-        {
-            ConnectionEndpoint cep;
-            if (_allocatedConnections.TryGetValue(primaryKey: port.Id, val: out cep))
-            {
-                return cep.ReceiveQueue.OutputAvailableAsync(ct);
-            }
-            throw new PortException(PortError.InvalidArgument);
-        }
-
-        public override void DeallocateFlow(Port port)
-        {
-            throw new NotImplementedException();
-        }
-
-        /// <summary>
-        /// Removes the registration of the application specified by the <see cref="ApplicationNamingInfo"/>.
-        /// </summary>
-        /// <param name="appInfo"></param>
-        public override void DeregisterApplication(ApplicationNamingInfo appInfo)
-        {
-            lock(_generalLock)
-            {
-                _registeredApplications.RemoveAt(_registeredApplications.FindIndex(x => x.ApplicationInfo.Equals(appInfo)));
-            }
-        }
-
-        public override PortInformationOptions GetPortInformation(Port port)
-        {
-            ConnectionEndpoint cep;
-            if (_allocatedConnections.TryGetValue(primaryKey: port.Id, val: out cep))
-            {
-                PortInformationOptions pi = 0;
-                pi |= !cep.Blocking ? PortInformationOptions.NonBlocking : 0;
-                pi |= cep.Connected ? PortInformationOptions.Connected : 0;
-                return pi;
-            }
-            throw new PortException(PortError.InvalidArgument);
-        }
-
-
-        public delegate void InvalidMessageReceivedEventHandler(object sender, Port port, PipeMessage message, MessageValidationResult info);
-        public event InvalidMessageReceivedEventHandler InvalidMessageReceived;
 
         protected virtual void OnInvalidMessageReceived(Port port, PipeMessage message, MessageValidationResult info)
         {
@@ -403,27 +151,11 @@ namespace System.Net.Rina.Shims
             if (handler != null)
             {
                 InvalidMessageReceived(this, port, message, info);
-            }            
+            }
         }
-
-        [Flags]
-        public enum MessageValidationResult : int { None = 0, DestinationCepId = 0x01, DestinationAddress = 0x02, SourceAddress = 0x04, MessageType = 0x08, NotRecognized = 0x10 }
-
-        MessageValidationResult validateMessage(ConnectionEndpoint cep, PipeMessage msg)
-        {
-            if (msg == null) return MessageValidationResult.NotRecognized;
-            var merr = MessageValidationResult.None;
-            merr |= (!Address.Equals(msg.SourceAddress,cep.Information.DestinationAddress)) ? MessageValidationResult.SourceAddress : 0;
-            merr |= (!Address.Equals(msg.DestinationAddress,cep.Information.SourceAddress)) ? MessageValidationResult.DestinationAddress : 0;
-            merr |= (msg.DestinationCepId != cep.LocalCepId) ? MessageValidationResult.DestinationCepId : 0;           
-            return merr;
-        }
-
-        public delegate void MessageDroppedEventHandler(object sender, Port port, PipeMessage message, PortError reason);
-        public event MessageDroppedEventHandler MessageDropped;
 
         /// <summary>
-        /// This callback is executed when the message is dropped because there is not enough space 
+        /// This callback is executed when the message is dropped because there is not enough space
         /// in the port buffer.
         /// </summary>
         /// <param name="port"></param>
@@ -438,219 +170,345 @@ namespace System.Net.Rina.Shims
             }
         }
 
+        /// <summary>
+        /// The wsaCleanup function terminates use of the IPC process.
+        /// </summary>
+        /// <returns></returns>
+        protected override PortError wsaCleanup()
+        {
+            return PortError.Success;
+        }
 
         /// <summary>
-        /// Reads data from the given <see cref="Port"/>. 
+        /// This method establishes a connection to another application, exchanges connect data, and
+        /// specifies required quality of service based on the specified QosParameters.
         /// </summary>
         /// <param name="port"></param>
-        /// <returns>A byte array containing received data. If operation would block than the result is zero length array. </returns>
-        public override byte[] Receive(Port port)
+        /// <param name="ci"></param>
+        /// <param name="callerData">Represents local CepId. </param>
+        /// <param name="calleeData">Represents CepId of the remote application.</param>
+        /// <param name="outflow"></param>
+        /// <param name="inflow"></param>
+        /// <param name="cep"></param>
+        /// <returns></returns>
+        protected override PortError wsaConnect(ConnectionEndpoint cep, ConnectionInformation ci, object callerData, out object calleeData, QosParameters outflow, QosParameters inflow)
         {
-            var buffer = new byte[4096];
-            PortError errorCode;
-            var bytesRead = Receive(port, buffer, 0, buffer.Length, PortFlags.None, out errorCode);
-            switch(errorCode)
+            var pcep = cep as PipeConnectionEndpoint;
+            var sourceCepid = (ulong)callerData;
+            var connectRequest = new PipeConnectRequest()
             {
-                case PortError.Success:
-                    var result = new byte[bytesRead];
-                    Buffer.BlockCopy(buffer, 0, result, 0, bytesRead);
-                    return result;
-                case PortError.WouldBlock:
-                    return new byte[0];
-                default:
-                    throw new PortException(errorCode);
+                RequesterCepId = sourceCepid,
+                DestinationAddress = ci.DestinationAddress,
+                DestinationApplication = ci.DestinationApplication.ConnectionString,
+                DestinationCepId = 0,
+                SourceAddress = ci.SourceAddress,
+                SourceApplication = ci.SourceApplication.ConnectionString
+            };
+
+            pcep.PipeClient = getOrCreatePipeFor(ci.DestinationAddress);
+
+            // Message needs to be written at once, as we are working in message mode:
+            PipeMessageEncoder.WriteMessage(connectRequest, pcep.PipeClient.Stream);
+            // wait for response:
+            var response = PipeMessageEncoder.ReadMessage(pcep.PipeClient.Stream) as PipeConnectResponse;
+            if (response != null && response.Result == ConnectResult.Accept)
+            {
+                calleeData = response.ResponderCepId;
+                return PortError.Success;
+            }
+            else
+            {
+                calleeData = 0;
+                return PortError.ConnectionRefused;
             }
         }
 
         /// <summary>
-        /// Reads data from the given <see cref="Port"/>. 
+        /// The function creates a connection endpoint that is bound to a specific provider.
         /// </summary>
-        /// <param name="port"></param>
-        /// <param name="buffer"></param>
-        /// <param name="offset"></param>
-        /// <param name="size"></param>
-        /// <param name="socketFlags"></param>
-        /// <param name="errorCode"></param>
         /// <returns></returns>
-        public int Receive(Port port, byte[] buffer, int offset, int size, PortFlags socketFlags, out PortError errorCode)
+        protected override ConnectionEndpoint wsaConnection(Sockets.AddressFamily af, ConnectionType ct)
         {
-            ConnectionEndpoint cep;
-            if (_allocatedConnections.TryGetValue(primaryKey: port.Id, val: out cep))
-            {
-                if (!cep.PipeClient.IsConnected)
-                {
-                    errorCode = PortError.NotConnected;
-                    return -1;
-                }
+            if (af != Address.Uri)
+                throw new ArgumentException($"Address family is not supported by AddressFamily.NamedPipe.", nameof(af));
 
-                // if no data are in receive buffer then load some message:
-                if (cep.ReceiveBuffer == null)
+            var cep = new PipeConnectionEndpoint()
+            {
+                AddressFamily = af,
+                ConnectionType = ct,
+                LocalCepId = _cepidSpace.Next(),
+            };
+            return cep;
+        }
+
+        protected override PortError wsaGetIoctl(ConnectionEndpoint cep, WsaControlCode code, out object value)
+        {
+            switch (code)
+            {
+                case WsaControlCode.NonBlocking:
+                    value = cep.Blocking;
+                    return PortError.Success;
+
+                case WsaControlCode.AvailableData:
+                    value = dataAvailable(cep as PipeConnectionEndpoint);
+                    return PortError.Success;
+            }
+            value = null;
+            return PortError.InvalidArgument;
+        }
+
+        protected override PortError wsaRecv(ConnectionEndpoint cep, byte[] buffer, int offset, int size, out int bytesReceived, PortFlags socketFlags)
+        {
+            var pcep = cep as PipeConnectionEndpoint;
+            if (!pcep.PipeClient.IsConnected)
+            {
+                bytesReceived = -1;
+                return PortError.NotConnected;
+            }
+
+            // if no data are in receive buffer then load some message:
+            if (cep.ReceiveBuffer == null)
+            {
+                try
                 {
-                    try
+                    if (cep.Blocking)
                     {
-                        if (cep.Blocking)
+                        try
                         {
-                            try
-                            {
-                                cep.ReceiveBuffer = cep.ReceiveQueue.Receive(cep.ReceiveTimeout);
-                            }
-                            catch (TimeoutException)
-                            {
-                                errorCode = PortError.WouldBlock;
-                                return 0;
-                            }
+                            cep.ReceiveBuffer = cep.ReceiveQueue.Receive(cep.ReceiveTimeout);
+                        }
+                        catch (TimeoutException)
+                        {
+                            bytesReceived = 0;
+                            return PortError.WouldBlock;
+                        }
+                    }
+                    else
+                    {
+                        ArraySegment<byte> item;
+                        if (cep.ReceiveQueue.TryReceive(out item))
+                        {
+                            cep.ReceiveBuffer = item;
                         }
                         else
                         {
-                            ByteArraySegment item;
-                            if (cep.ReceiveQueue.TryReceive(out item))
-                            {
-                                cep.ReceiveBuffer = item;
-                            }
-                            else
-                            {
-                                errorCode = PortError.WouldBlock;
-                                return 0;
-                            }
+                            bytesReceived = 0;
+                            return PortError.WouldBlock;
                         }
                     }
-                    catch(InvalidOperationException)
-                    {
-                        errorCode = PortError.PortError;
-                        return -1;
-                    }
                 }
-                // Read bytes from the received buffer:
-                if (size >= cep.ReceiveBuffer.Length)
-                {  // Consume all bytes
-                    var consumedBytes = cep.ReceiveBuffer.Length;
-                    Buffer.BlockCopy(cep.ReceiveBuffer.Bytes, cep.ReceiveBuffer.Offset, buffer, offset, consumedBytes);
-                    cep.ReceiveBuffer = null;
-                    errorCode = PortError.Success;
-                    return consumedBytes;
-                }
-                else 
-                {   // Copy only part of ReceiveBuffer, adjusting the rest
-                    var consumedBytes = size;
-                    Buffer.BlockCopy(cep.ReceiveBuffer.Bytes, cep.ReceiveBuffer.Offset, buffer, offset, consumedBytes);
-                    cep.ReceiveBuffer = new ByteArraySegment(cep.ReceiveBuffer.Bytes, cep.ReceiveBuffer.Offset + consumedBytes, cep.ReceiveBuffer.Length - consumedBytes);
-                    errorCode = PortError.Success;
-                    return consumedBytes;
+                catch (InvalidOperationException)
+                {
+                    bytesReceived = -1;
+                    return PortError.PortError;
                 }
             }
+            // Read bytes from the received buffer:
+            if (size >= cep.ReceiveBuffer?.Count)
+            {  // Consume all bytes
+                bytesReceived = cep.ReceiveBuffer.Value.Count;
+                Buffer.BlockCopy(cep.ReceiveBuffer.Value.Array, cep.ReceiveBuffer.Value.Offset, buffer, offset, bytesReceived);
+                cep.ReceiveBuffer = null;
+                return PortError.Success;
+            }
             else
-                throw new PortException(PortError.InvalidArgument);
+            {   // Copy only part of ReceiveBuffer, adjusting the rest
+                bytesReceived = size;
+                Buffer.BlockCopy(cep.ReceiveBuffer.Value.Array, cep.ReceiveBuffer.Value.Offset, buffer, offset, bytesReceived);
+                cep.ReceiveBuffer = new ArraySegment<byte>(cep.ReceiveBuffer.Value.Array, cep.ReceiveBuffer.Value.Offset + bytesReceived, cep.ReceiveBuffer.Value.Count - bytesReceived);
+                return PortError.Success;
+            }
         }
 
+        protected override PortError wsaSend(ConnectionEndpoint cep, byte[] buffer, int offset, int size)
+        {
+            var pcep = cep as PipeConnectionEndpoint;
+            var msg = new PipeDataMessage()
+            {
+                SourceAddress = cep.Information.SourceAddress,
+                DestinationAddress = cep.Information.DestinationAddress,
+                DestinationCepId = cep.RemoteCepId,
+                Data = new ArraySegment<byte>(buffer, offset, size)
+            };
+            Trace.TraceInformation($"Send Message: {msg} using CEP: {cep}.");
+
+            try
+            {
+                var bytesSent = PipeMessageEncoder.WriteMessage(msg, pcep.PipeClient.Stream);
+                return PortError.Success;
+            }
+            catch (IOException e)
+            {
+                Trace.TraceError($"wsaSend: {e.Message}.");
+                return PortError.NotConnected;
+            }
+            catch (ObjectDisposedException e)
+            {
+                Trace.TraceError($"wsaSend: {e.Message}.");
+                return PortError.OperationNotSupported;
+            }
+            catch (Exception e)
+            {
+                Trace.TraceError($"wsaSend: {e.Message}.");
+                return PortError.Fault;
+            }
+        }
+
+        protected override PortError wsaSendDisconnect(ConnectionEndpoint cep)
+        {
+            var pcep = cep as PipeConnectionEndpoint;
+            Debug.Assert(cep != null);
+            var msg = new PipeDisconnectRequest()
+            {
+                SourceAddress = cep.Information.SourceAddress,
+                DestinationAddress = cep.Information.DestinationAddress,
+                DestinationCepId = cep.RemoteCepId,
+                Flags = DisconnectFlags.Gracefull
+            };
+
+            PipeMessageEncoder.WriteMessage(msg, pcep.PipeClient.Stream);
+            return PortError.Success;
+        }
+
+        protected override PortError wsaSetIoctl(ConnectionEndpoint cep, WsaControlCode code, object value)
+        {
+            var pcep = cep as PipeConnectionEndpoint;
+            switch (code)
+            {
+                case WsaControlCode.NonBlocking:
+                    cep.Blocking = (bool)value;
+                    return PortError.Success;
+
+                case WsaControlCode.Flush:
+                    pcep.PipeClient.Stream.Flush();
+                    return PortError.Success;
+            }
+            return PortError.InvalidArgument;
+        }
 
         /// <summary>
-        /// Collection all registered applications and their request handlers.
+        /// The wsaStartup function initiates use of the current IPC process.
         /// </summary>
-        List<RegisteredApplication> _registeredApplications = new List<RegisteredApplication>();
-
-        public override void RegisterApplication(ApplicationNamingInfo appInfo, ConnectionRequestHandler reqHandler)
+        /// <param name="wVersionRequested"></param>
+        /// <param name="data"></param>
+        /// <returns></returns>
+        protected override PortError wsaStartup(ushort versionRequested, out object data)
         {
-            lock (_generalLock)
+            data = null;
+            return PortError.Success;
+        }
+
+        private int dataAvailable(PipeConnectionEndpoint cep)
+        {
+            return cep.ActualBufferSize;
+        }
+
+        /// <summary>
+        /// Gets existing or creates a new <see cref="PipeClient"/> object for the specified <paramref name="destinationAddress"/>.
+        /// </summary>
+        /// <param name="destinationAddress"><see cref="Address"/> object of type <see cref="Address.Uri"/> that specifies remote pipe server address.</param>
+        /// <returns><see cref="PipeClient"/> object that should be connected to a pipe server with specified <paramref name="destinationAddress"/>.</returns>
+        /// <remarks>
+        /// This methods attempts to create and connect a new <see cref="PipeClient"/> object. For each remote endpoint
+        /// there should be exactly one <see cref="PipeClient"/> object that is shared for all communication.
+        /// While this method attempts to connect the <see cref="PipeClient"/> the caller should check that the pipe is really connected.
+        /// </remarks>
+        private PipeClient getOrCreatePipeFor(Address destinationAddress)
+        {
+            var addressKey = (destinationAddress.Value as Uri)?.ToString();
+            if (addressKey == null) throw new ArgumentException("Provided address is not of expected AddressFamily. Only Address.Uri family is accepted.", nameof(destinationAddress));
+            PipeClient pipeClient;
+            WeakReference<PipeClient> pipeClientReference;
+            if (!_pipeClients.TryGetValue(addressKey, out pipeClientReference))
+            {   // create a new object
+                Trace.TraceInformation($"{nameof(getOrCreatePipeFor)}: pipeClient associated with key {addressKey} cannot be found, I will create new pipeClient.");
+                pipeClient = PipeClient.Create(destinationAddress);
+                pipeClientReference = new WeakReference<PipeClient>(pipeClient);
+                _pipeClients[addressKey] = pipeClientReference;
+            }
+            if (!pipeClientReference.TryGetTarget(out pipeClient))
+            {   // recreate a new object
+                Trace.TraceInformation($"{nameof(getOrCreatePipeFor)}: pipeClient with key {addressKey} is dead, I will recreate it.");
+                pipeClient = PipeClient.Create(destinationAddress);
+                pipeClientReference.SetTarget(pipeClient);
+            }
+
+            if (!pipeClient.IsConnected) pipeClient.Connect(pipeConnectTimeout);
+            return pipeClient;
+        }
+
+        private void releasePort(Port port)
+        {
+            lock (_portManagementSync)
             {
-                Trace.TraceInformation($"Application '{appInfo.ProcessName}' registered at process {this.LocalAddress}.");
-                this._registeredApplications.Add(new RegisteredApplication() { ApplicationInfo = appInfo, RequestHandler = reqHandler });
+                _portsAllocated.Remove(port.Id);
+                _portidSpace.Release(port.Id);
             }
         }
 
-        public override int Send(Port port, byte[] buffer, int offset, int size)
+        /// <summary>
+        /// Validates the message with respect to information from the given <see cref="ConnectionEndpoint"/>.
+        /// </summary>
+        /// <param name="cep"></param>
+        /// <param name="msg"></param>
+        /// <returns>
+        /// <see cref="MessageValidationResult"/> value that contains the found issues. If this value
+        /// is <see cref="MessageValidationResult.None"/> then the message is valid.
+        /// </returns>
+        private MessageValidationResult validateMessage(ConnectionEndpoint cep, PipeMessage msg)
         {
-            ConnectionEndpoint cep;
-            if(_allocatedConnections.TryGetValue(primaryKey: port.Id, val: out cep))
-            {
-                var msg = new PipeDataMessage()
-                {
-                    SourceAddress = cep.Information.SourceAddress,
-                    DestinationAddress = cep.Information.DestinationAddress,
-                    DestinationCepId = cep.RemoteCepId,
-                    Data = new PacketDotNet.Utils.ByteArraySegment(buffer, offset, size)
-                };
-#if DEBUG 
-                Trace.TraceInformation($"Send Message: {msg} using CEP: {cep}.");
-#endif
-                return writeMessageToPipe(cep.PipeClient.Stream, msg);
-            }
-            else
-                return -1;
+            if (msg == null) return MessageValidationResult.NotRecognized;
+            var merr = MessageValidationResult.None;
+            merr |= (!Address.Equals(msg.SourceAddress, cep.Information.DestinationAddress)) ? MessageValidationResult.SourceAddress : 0;
+            merr |= (!Address.Equals(msg.DestinationAddress, cep.Information.SourceAddress)) ? MessageValidationResult.DestinationAddress : 0;
+            merr |= (msg.DestinationCepId != cep.LocalCepId) ? MessageValidationResult.DestinationCepId : 0;
+            return merr;
         }
-
-        public override void SetBlocking(Port port, bool value)
-        {
-            ConnectionEndpoint cep;
-            if (_allocatedConnections.TryGetValue(primaryKey: port.Id, val: out cep))
-            {
-                cep.Blocking = value;
-            }                        
-        }
-
-        #region IDisposable Support
-        private bool disposedValue = false; // To detect redundant calls
-
-        protected virtual void Dispose(bool disposing)
-        {
-            if (!disposedValue)
-            {
-                if (disposing)
-                {
-                    // TODO: dispose managed state (managed objects).
-                }
-
-                // TODO: free unmanaged resources (unmanaged objects) and override a finalizer below.
-                // TODO: set large fields to null.
-
-                disposedValue = true;
-            }
-        }
-
-        // TODO: override a finalizer only if Dispose(bool disposing) above has code to free unmanaged resources.
-        // ~NamedPipeIpcProcess() {
-        //   // Do not change this code. Put cleanup code in Dispose(bool disposing) above.
-        //   Dispose(false);
-        // }
 
         // This code added to correctly implement the disposable pattern.
-        public override void Dispose()
+        protected override void Dispose(bool disposing)
         {
-            // Do not change this code. Put cleanup code in Dispose(bool disposing) above.
-            Dispose(true);
-            // TODO: uncomment the following line if the finalizer is overridden above.
-            // GC.SuppressFinalize(this);
+            base.Dispose(disposing);
         }
-        #endregion
 
         #region Pipe Data and Control Methods
+
+        private Helpers.UniqueRandomUInt32 _pipestreamidSpace = new Helpers.UniqueRandomUInt32();
+
+        /// <summary>
+        /// Refers to <see cref="IpcHost"/>  that provides context for the current IpcProcess.
+        /// </summary>
+        public IpcHost Host { get; private set; }
+
         public void OnAsyncConnect(PipeStream pipe, out object state)
         {
-            state = ++pipeId;
-            Trace.TraceInformation($"OnAsyncConnect: new pipe connected, connection id={pipeId}");            
+            state = _pipestreamidSpace.Next();
+            Trace.TraceInformation($"OnAsyncConnect: new pipe connected, connection id={state}");
         }
-
-        int pipeId = 0;
 
         public void OnAsyncDisconnect(PipeStream pipe, object state)
         {
+            _pipestreamidSpace.Release((uint)state);
             Trace.TraceInformation($"OnAsyncDisconnect: pipe id={state} disconnected.");
         }
 
         public void OnAsyncMessage(PipeStream pipeStream, byte[] data, int bytes, object state)
         {
             Trace.TraceInformation($"OnAsyncMessage: received message on pipe id={state}.");
-            var msg = readMessageFromBuffer(data, bytes);
+            var msg = PipeMessageEncoder.ReadMessage(data, 0, bytes);
             Trace.TraceInformation($"OnAsyncMessage: read message {msg?.GetType().ToString()}.");
             if (msg != null)
             {
                 switch (msg.MessageType)
                 {
                     case PipeMessageType.ConnectRequest:
-                        onConnectRequest(pipeStream, msg as PipeConnectRequest);
+                        onAsyncMessage_ConnectRequest(pipeStream, msg as PipeConnectRequest);
                         break;
+
                     case PipeMessageType.Data:
-                        onDataReceived(pipeStream, msg as PipeDataMessage);
+                        onAsyncMessage_DataMessage(pipeStream, msg as PipeDataMessage);
                         break;
+
                     default:
                         break;
                 }
@@ -660,99 +518,72 @@ namespace System.Net.Rina.Shims
                 Trace.TraceError("Unknown or corrupted message received.");
             }
         }
-        /// <summary>
-        /// Receives data message and inserts data into a buffer of the target connection end point.
-        /// </summary>
-        /// <param name="pipeStream"></param>
-        /// <param name="message"></param>
-        private void onDataReceived(PipeStream pipeStream, PipeDataMessage message)
-        {
-            if (message == null) throw new ArgumentNullException(nameof(message));
-
-            var cepId = message.DestinationCepId;
-            ConnectionEndpoint cep;
-            if (_allocatedConnections.TryGetValue(primaryKey: cepId, val: out cep))
-            {
-                var eflag = validateMessage(cep, message);
-                if (eflag != MessageValidationResult.None)
-                {
-                    OnInvalidMessageReceived(cep.Port, message, eflag);
-                    return;
-                }
-                if (cep.ActualBufferSize + message.Data.Length < cep.ReceiveBufferSize)
-                {
-                    cep.ReceiveQueue.Post(message.Data);
-                }
-                else
-                {                    
-                    OnMessageDropped(cep.Port, message, PortError.NoBufferSpaceAvailable);
-                }
-            }
-        }
 
         /// <summary>
         /// Handles <see cref="PipeConnectRequest"/> message.
         /// </summary>
         /// <param name="pipeStream"><see cref="PipeStream"/> object used to reply to <see cref="PipeConnectRequest"/>.</param>
         /// <param name="connectRequest">A <see cref="PipeConnectRequest"/> message.</param>
-        private void onConnectRequest(PipeStream pipeStream, PipeConnectRequest connectRequest)
+        private void onAsyncMessage_ConnectRequest(PipeStream pipeStream, PipeConnectRequest connectRequest)
         {
-            var app = _registeredApplications.Find(r => { return r.ApplicationInfo.ProcessName.Equals(connectRequest.DestinationApplication, StringComparison.InvariantCultureIgnoreCase); });
+            var appInfo = new ApplicationNamingInfo(connectRequest.DestinationApplication);
+            Trace.TraceInformation($"Connection to application {appInfo} requested.");
+            var app = FindApplication(appInfo.ApplicationName);
+
             if (app != null)
             {
                 // create flow information from connect request message:
                 var flowInfo = new FlowInformation()
                 {
                     SourceAddress = connectRequest.SourceAddress,
-                    SourceApplication = new ApplicationNamingInfo(connectRequest.SourceApplication,  "", "", ""),
+                    SourceApplication = new ApplicationNamingInfo(connectRequest.SourceApplication),
                     DestinationAddress = connectRequest.DestinationAddress,
-                    DestinationApplication = new ApplicationNamingInfo(connectRequest.DestinationApplication, "", "","")
+                    DestinationApplication = new ApplicationNamingInfo(connectRequest.DestinationApplication)
                 };
 
-                AcceptFlowHandler flowHandler = null;                
+                AcceptFlowHandler flowHandler = null;
                 var reply = ConnectionRequestResult.Reject;
 
                 try
-                {   // process application request handler in try-catch to avoid 
+                {   // process application request handler in try-catch to avoid
                     // system crash when application handler is incorrect.
                     reply = app.RequestHandler(this, flowInfo, out flowHandler);
                 }
                 catch (Exception e)
                 {
-                    Trace.TraceError($"RequestHandler method of {app.ApplicationInfo.ProcessName}:{e.Message}");
+                    Trace.TraceError($"RequestHandler method of {app.ApplicationInfo.ApplicationName}:{e.Message}");
                 }
 
-                Trace.TraceInformation($"Request handler of application '{flowInfo.DestinationApplication.ProcessName}' replied {reply}.");
+                Trace.TraceInformation($"Request handler of application '{flowInfo.DestinationApplication.ApplicationName}' replied {reply}.");
                 if (reply == ConnectionRequestResult.Accept)
                 {   // application accepts the connection, so we can create a new ConnectionEndpoint
                     // that manages the new flow.
-                    var port = getFreshPort();
                     // creates connection to remote endpoint:
-                    var pipeClient = getOrCreatePipeClient(flowInfo.SourceAddress);
-                    var cep = new ConnectionEndpoint()
+                    var localCepId = _cepidSpace.Next();
+                    var cep = new PipeConnectionEndpoint()
                     {
                         Blocking = true,
                         Information = new ConnectionInformation()
-                        {   // we populate this table from flowInfo, remember that connection information 
-                            // is for local endpoint, while flowinfo is from the remote endpoint perspective.
+                        {   // we populate this table from flowInfo, remember that connection information
+                            // is for local endpoint, while flowInfo is from the remote endpoint perspective.
                             // It means that we must switch source and destination:
                             SourceAddress = flowInfo.DestinationAddress,
                             SourceApplication = flowInfo.DestinationApplication,
                             DestinationAddress = flowInfo.SourceAddress,
                             DestinationApplication = flowInfo.SourceApplication
                         },
-                        LocalCepId = port.Id,
-                        PipeClient = pipeClient,
-                        Port = port,
-                        RemoteCepId = connectRequest.RequesterCepId, 
+                        LocalCepId = localCepId,
+                        PipeClient = getOrCreatePipeFor(flowInfo.SourceAddress),
+                        Port = new Port(this, _portidSpace.Next()) { CepId = localCepId } ,
+                        RemoteCepId = connectRequest.RequesterCepId,
                         Connected = true
                     };
-                    _allocatedConnections.Add(port.Id, connectRequest.RequesterCepId, cep);
+                    _connectionsOpen.Add(cep.LocalCepId, cep);
 
                     Trace.TraceInformation($"Request accepted. New CEP created: {cep}");
 
-                    // send accept response to remote end point. We use 
-                    // "control pipe" for this. However, further communication will 
+                    // send accept response to remote end point. We use
+                    // "control pipe" for this. However, further communication will
                     // be using "data pipe".
                     var connectAccept = new PipeConnectResponse()
                     {
@@ -761,21 +592,19 @@ namespace System.Net.Rina.Shims
                         DestinationCepId = connectRequest.RequesterCepId,
                         SourceAddress = _localAddress,
                         RequesterCepId = connectRequest.RequesterCepId,
-                        ResponderCepId = port.Id
+                        ResponderCepId = cep.LocalCepId
                     };
-                    writeMessageToPipe(pipeStream, connectAccept);
-                    
+                    PipeMessageEncoder.WriteMessage(connectAccept, pipeStream);
 
                     // executes the handler on newly created Task
-                    // this task is running on its own...                   
+                    // this task is running on its own...
                     Task.Run(async () =>
                     {
-                        try { await flowHandler(this, flowInfo, port); }
+                        try { await flowHandler(this, flowInfo, cep.Port); }
                         catch (Exception e)
                         {
-                            Trace.TraceError($"A flow handler of application '{app.ApplicationInfo.ProcessName}' raised exception: {e.Message}");
+                            Trace.TraceError($"A flow handler of application '{app.ApplicationInfo.ApplicationName}' raised exception: {e.Message}");
                         }
-
                     }).ConfigureAwait(false);
                 }
             }
@@ -791,130 +620,156 @@ namespace System.Net.Rina.Shims
                     RequesterCepId = connectRequest.RequesterCepId,
                     ResponderCepId = 0
                 };
-                writeMessageToPipe(pipeStream, connectReject);
+                PipeMessageEncoder.WriteMessage(connectReject, pipeStream);
             }
         }
-        #endregion
+
+        /// <summary>
+        /// Receives data message and inserts data into a buffer of the target connection end point.
+        /// </summary>
+        /// <param name="pipeStream"></param>
+        /// <param name="message"></param>
+        private void onAsyncMessage_DataMessage(PipeStream pipeStream, PipeDataMessage message)
+        {
+            if (message == null) throw new ArgumentNullException(nameof(message));
+
+            var cepId = message.DestinationCepId;
+            ConnectionEndpoint cep;
+            if (_connectionsOpen.TryGetValue(cepId, out cep))
+            {
+                var eflag = validateMessage(cep, message);
+                if (eflag != MessageValidationResult.None)
+                {
+                    OnInvalidMessageReceived(cep.Port, message, eflag);
+                    return;
+                }
+                if (cep.ActualBufferSize + message.Data.Count < cep.ReceiveBufferSize)
+                {
+                    cep.ReceiveQueue.Post(message.Data);
+                }
+                else
+                {
+                    OnMessageDropped(cep.Port, message, PortError.NoBufferSpaceAvailable);
+                }
+            }
+        }
+
+        #endregion Pipe Data and Control Methods
 
         #region Internal nested classes
 
         /// <summary>
-        /// This is internal class for storing necessary information about each connection.
-        /// </summary>
-        internal class ConnectionInformation
-        {
-            internal ApplicationNamingInfo SourceApplication;
-            internal ApplicationNamingInfo DestinationApplication;
-            internal Address SourceAddress;
-            internal Address DestinationAddress;
-        }
-
-        /// <summary>
         /// Describes the local endpoint of the connection between two IPCs.
         /// </summary>
-        internal class ConnectionEndpoint
+        internal class PipeConnectionEndpoint : ConnectionEndpoint
         {
-            internal Port Port;
-            /// <summary>
-            /// Specifies whether the port is blocking or non-blocking.
-            /// </summary>
-            public bool Blocking { get; internal set; }
-            /// <summary>
-            /// Local ConnectionEndPoint Id is used to identify the connection.
-            /// </summary>
-            public ulong LocalCepId ;
-            /// <summary>
-            /// Remote ConnectionEndPoint Id is used to identify the connection.
-            /// </summary>
-            public ulong RemoteCepId;
-            /// <summary>
-            /// Provides information about the connection associated with the current ConnectionEndpoint.
-            /// </summary>
-            public ConnectionInformation Information;
-            /// <summary>
-            /// <see cref="PipeClient"/> object associated with this connection. Note that connections 
-            /// share these clients.
-            /// </summary>
             public PipeClient PipeClient;
-            /// <summary>
-            /// This is receive queue. New data are enqueued in this queue by the IPC process. Dequeue
-            /// </summary>
-            public readonly BufferBlock<ByteArraySegment> ReceiveQueue = new BufferBlock<ByteArraySegment>();
-            /// <summary>
-            /// This is byte buffer. Bytes are read from this buffer. 
-            /// </summary>
-            public ByteArraySegment ReceiveBuffer { get; internal set; }
-            /// <summary>
-            /// Actual size of the buffer. Represents total number of bytes currently in <see cref="ReceiveQueue"/>  and <see cref="ReceiveBuffer"/>.
-            /// </summary>
-            internal int ActualBufferSize;
-            /// <summary>
-            /// Sets or gets the maximum number of bytes that can be buffered.
-            /// </summary>
-            public int ReceiveBufferSize { set; get; }
 
-            /// <summary>
-            /// An amount of time for which the IPC process will wait until the completion of receive operation.
-            /// </summary>
-            public TimeSpan ReceiveTimeout { set; get; }
-            
-            /// <summary>
-            /// Determines if the current endpoint is connected or disconnected.
-            /// </summary>
-            public bool Connected { get; internal set; }
-
-            public ConnectionEndpoint()
+            public PipeConnectionEndpoint()
             {
-                ReceiveBufferSize = 4096*4;
+                ReceiveBufferSize = 4096 * 4;
                 ReceiveTimeout = TimeSpan.FromSeconds(30);
             }
-            public override string ToString()
+        }
+
+        #endregion Internal nested classes
+    }
+
+    internal class PipeClient
+    {
+        private readonly NamedPipeClientStream _pipe;
+
+        public PipeClient(NamedPipeClientStream pipe)
+        {
+            this._pipe = pipe;
+        }
+
+        public bool IsConnected
+        {
+            get
             {
-                return $"{Information.SourceApplication}@{Information.SourceAddress}:{LocalCepId} --> {Information.DestinationApplication}@{Information.DestinationAddress}:{RemoteCepId} [{Connected}]";
+                return _pipe.IsConnected;
+            }
+        }
+
+        public PipeStream Stream
+        {
+            get
+            {
+                return _pipe;
             }
         }
 
         /// <summary>
-        /// Keeps information about registered applications.
+        /// Creates a new <see cref="PipeClient"/> object for passed <paramref name="address"/>. Address object must be valid <see cref="Address.Uri"/> family.
         /// </summary>
-        internal class RegisteredApplication
+        /// <remarks>
+        /// The Uri can have different format:
+        /// file://HOST/pipe/PIPENAME
+        ///
+        /// or
+        ///
+        /// net.pipe://HOST/PIPENAME
+        /// </remarks>
+        ///
+        /// <param name="address"></param>
+        /// <returns></returns>
+        public static PipeClient Create(Address address)
         {
-            public ApplicationNamingInfo ApplicationInfo;
-            public ConnectionRequestHandler RequestHandler;
+            if (address.Family != Address.Uri) throw new ArgumentException($"Address of type {nameof(Address.Uri)} expected.", nameof(address));
+
+            var uri = address.Value as Uri;
+            var uriUnc = uri.IsUnc ? uri : uri.AsPipeNameUnc();
+            var host = uriUnc.Host;
+            var pipe = Path.GetFileName(uriUnc.PathAndQuery);
+            return Create(host, pipe);
         }
 
-        #endregion
+        /// <summary>
+        /// Creates a new <see cref="PipeClient"/> object for passed <paramref name="serverName"/> and <paramref name="pipename"/>.
+        /// </summary>
+        /// <param name="serverName"></param>
+        /// <param name="pipename"></param>
+        /// <returns></returns>
+        public static PipeClient Create(String serverName, String pipename)
+        {
+            Trace.TraceInformation($"PipeClient.Create(serverName:{serverName},pipename:{pipename})");
+            if (serverName == null) throw new ArgumentNullException(nameof(serverName));
+            if (pipename == null) throw new ArgumentNullException(nameof(pipename));
+
+            var pipe = new NamedPipeClientStream(
+                serverName,
+                pipename,
+                PipeDirection.InOut,
+                PipeOptions.Asynchronous | PipeOptions.WriteThrough);
+            return new PipeClient(pipe);
+        }
+
+        public PipeStream Connect(Int32 timeout)
+        {
+            // NOTE: will throw on failure
+            _pipe.Connect(timeout);
+
+            // Must Connect before setting ReadMode
+            _pipe.ReadMode = PipeTransmissionMode.Message;
+
+            return _pipe;
+        }
     }
 
-
-    // Interface for user code to receive notifications regarding pipe messages
-    interface IPipeCallback
-    {
-        void OnAsyncConnect(PipeStream pipe, out Object state);
-        void OnAsyncDisconnect(PipeStream pipe, Object state);
-        void OnAsyncMessage(PipeStream pipe, Byte[] data, Int32 bytes, Object state);
-    }
-
-    // Internal data associated with pipes
-    struct PipeData
-    {
-        public PipeStream pipe;
-        public Object state;
-        public Byte[] data;
-    };
-
-    class PipeServer
+    internal class PipeServer
     {
         // TODO: parameterize so they can be passed by application
         public const Int32 SERVER_IN_BUFFER_SIZE = 4096;
+
         public const Int32 SERVER_OUT_BUFFER_SIZE = 4096;
 
-        private readonly String m_pipename;
         private readonly IPipeCallback m_callback;
+        private readonly String m_pipename;
         private readonly PipeSecurity m_ps;
 
-        private bool m_running;
         private Dictionary<PipeStream, PipeData> m_pipes = new Dictionary<PipeStream, PipeData>();
+        private bool m_running;
 
         public PipeServer(
             String pipename,
@@ -971,6 +826,34 @@ namespace System.Net.Rina.Shims
             }
         }
 
+        private void BeginRead(PipeData pd)
+        {
+            // Asynchronously read a request from the client
+            bool isConnected = pd.pipe.IsConnected;
+            if (isConnected)
+            {
+                try
+                {
+                    pd.pipe.BeginRead(pd.data, 0, pd.data.Length, OnAsyncMessage, pd);
+                }
+                catch (Exception)
+                {
+                    isConnected = false;
+                }
+            }
+
+            if (!isConnected)
+            {
+                pd.pipe.Close();
+                m_callback.OnAsyncDisconnect(pd.pipe, pd.state);
+                lock (m_pipes)
+                {
+                    bool removed = m_pipes.Remove(pd.pipe);
+                    Debug.Assert(removed);
+                }
+            }
+        }
+
         private void IpcServerPipeCreate()
         {
             // Create message-mode pipe to simplify message transition
@@ -988,6 +871,16 @@ namespace System.Net.Rina.Shims
 
             // Asynchronously accept a client connection
             pipe.BeginWaitForConnection(OnClientConnected, pipe);
+        }
+
+        private void OnAsyncMessage(IAsyncResult result)
+        {
+            // Async read from client completed
+            PipeData pd = (PipeData)result.AsyncState;
+            Int32 bytesRead = pd.pipe.EndRead(result);
+            if (bytesRead != 0)
+                m_callback.OnAsyncMessage(pd.pipe, pd.data, bytesRead, pd.state);
+            BeginRead(pd);
         }
 
         private void OnClientConnected(IAsyncResult result)
@@ -1028,128 +921,5 @@ namespace System.Net.Rina.Shims
                 pipe.Close();
             }
         }
-
-        private void BeginRead(PipeData pd)
-        {
-            // Asynchronously read a request from the client
-            bool isConnected = pd.pipe.IsConnected;
-            if (isConnected)
-            {
-                try
-                {
-                    pd.pipe.BeginRead(pd.data, 0, pd.data.Length, OnAsyncMessage, pd);
-                }
-                catch (Exception)
-                {
-                    isConnected = false;
-                }
-            }
-
-            if (!isConnected)
-            {
-                pd.pipe.Close();
-                m_callback.OnAsyncDisconnect(pd.pipe, pd.state);
-                lock (m_pipes)
-                {
-                    bool removed = m_pipes.Remove(pd.pipe);
-                    Debug.Assert(removed);
-                }
-            }
-
-        }
-
-        private void OnAsyncMessage(IAsyncResult result)
-        {
-            // Async read from client completed
-            PipeData pd = (PipeData)result.AsyncState;
-            Int32 bytesRead = pd.pipe.EndRead(result);
-            if (bytesRead != 0)
-                m_callback.OnAsyncMessage(pd.pipe, pd.data, bytesRead, pd.state);
-            BeginRead(pd);
-        }
-
     }
-
-
-    class PipeClient
-    {
-        private readonly NamedPipeClientStream _pipe;
-
-        /// <summary>
-        /// Creates a new <see cref="PipeClient"/> object for passed <paramref name="address"/>. Address object must be valid <see cref="Address.Uri"/> family.
-        /// </summary>
-        /// <remarks>
-        /// The Uri can have different format:
-        /// file://HOST/pipe/PIPENAME
-        /// 
-        /// or
-        /// 
-        /// net.pipe://HOST/PIPENAME  
-        /// </remarks>
-        /// 
-        /// <param name="address"></param>
-        /// <returns></returns>
-        public static PipeClient Create(Address address)
-        {
-            if (address.Family != Address.Uri) throw new ArgumentException($"Address of type {nameof(Address.Uri)} expected.", nameof(address));
-            
-            var uri = address.Value as Uri;
-            var uriUnc = uri.IsUnc ? uri : uri.AsPipeNameUnc();
-            var host = uriUnc.Host;
-            var pipe = Path.GetFileName(uriUnc.PathAndQuery);
-            return Create(host, pipe);
-        }
-        
-        /// <summary>
-        /// Creates a new <see cref="PipeClient"/> object for passed <paramref name="serverName"/> and <paramref name="pipename"/>.
-        /// </summary>
-        /// <param name="serverName"></param>
-        /// <param name="pipename"></param>
-        /// <returns></returns>
-        public static PipeClient Create(String serverName, String pipename)
-        {
-            Trace.TraceInformation($"PipeClient.Create(serverName:{serverName},pipename:{pipename})");
-            if (serverName == null) throw new ArgumentNullException(nameof(serverName));
-            if (pipename == null) throw new ArgumentNullException(nameof(pipename));
-
-            var pipe = new NamedPipeClientStream(
-                serverName,
-                pipename,
-                PipeDirection.InOut,
-                PipeOptions.Asynchronous | PipeOptions.WriteThrough);
-            return new PipeClient(pipe);
-        }
-
-        public PipeClient(NamedPipeClientStream pipe)
-        {
-            this._pipe = pipe;
-        }
-
-        public bool IsConnected
-        {
-            get {
-                return _pipe.IsConnected;
-            }
-        }
-
-        public PipeStream Stream
-        {
-            get
-            {
-                return _pipe;
-            }
-        }
-
-        public PipeStream Connect(Int32 timeout)
-        {
-            // NOTE: will throw on failure
-            _pipe.Connect(timeout);
-
-            // Must Connect before setting ReadMode
-            _pipe.ReadMode = PipeTransmissionMode.Message;
-
-            return _pipe;
-        }
-    }
-
 }

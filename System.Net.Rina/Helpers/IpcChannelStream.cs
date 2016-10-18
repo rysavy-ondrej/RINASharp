@@ -507,7 +507,7 @@ namespace System.Net.Rina
                         Port chkStreamSocket = m_StreamPort;
                         if (chkStreamSocket != null)
                         {
-                            chkStreamSocket.InternalShutdown(PortShutdown.Both);
+                            chkStreamSocket.Shutdown(TimeSpan.Zero);
                             chkStreamSocket.Close(m_CloseTimeout);
                         }
                     }

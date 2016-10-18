@@ -123,3 +123,36 @@ them to specific providers.
 rina://wcf-shim-dif/Dublin/apps/web-server
 ```
 This is an alias that maps to iis application.
+### Disconnect
+When client wants to close the connection gracefully it can call Disconnect function:
+```CSharp
+ipc.Disconnect(port, timeout);
+```
+or asynchronous version:
+```CSharp
+var ct = new CancellationToken();
+await ipc.DisconnectAsync(port, ct);
+```
+When client initiates disconnection, the order of actions is as follows:
+* Client calls `Disconnect` and sends `DisconnectRequest` message of type `Gracefull`
+* Server receives `DisconnectRequest` message, which indicates that no more data will be received
+* If server has buffered data to send it processes this data
+* Client keeps receiving data from the server
+* Server has finished sending pending data and sends `DisconnectResponse`
+* Client closes the connection upon receiving `DisconnectResponse` message.
+
+Other option is to abort the connection causing that pending data will be discarded:
+* Client calls `Abort` that causes `DisconnectRequest` message of type Abort will be sent
+* When Server receives `DisconnectRequest` message of type `Abort`, it should discard all messages
+and may optionally send `DisconnectRespose` message
+* Client will not process any other messages except `DisconnectResponse` message.
+
+
+
+
+
+
+# Winsock 2
+The goal is to implement RINA in as a new service provider in Winsock 2.
+Some useful references related to Winsock 2 programming:
+* https://msdn.microsoft.com/en-us/library/windows/desktop/ms740673(v=vs.85).aspx

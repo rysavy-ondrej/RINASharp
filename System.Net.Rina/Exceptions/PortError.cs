@@ -190,6 +190,8 @@ namespace System.Net.Rina
         /// <summary>
         /// No data record of requested type.
         /// </summary>
-        NoData = (10000 + 1004),     
-    }
+        NoData = (10000 + 1004),
+
+        OperationAborted
+    }
 }

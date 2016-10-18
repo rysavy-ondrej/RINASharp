@@ -24,6 +24,28 @@ using System;
 
 namespace System.Net.Rina
 {
+    [Flags]
+    public enum PortFlags
+    {
+        None = 0x00000000,
+        OutOfBand = 0x00000001,
+        Peek = 0x00000002,
+        DontRoute = 0x00000004,
+        MaxIOVectorLength = 0x00000010,
+        Truncated = 0x00000100,
+        ControlDataTruncated = 0x00000200,
+        Broadcast = 0x00000400,
+        Multicast = 0x00000800,
+        Partial = 0x00008000,
+    }
+
+    [Flags]
+    public enum PortInformationOptions : int
+    {
+        NonBlocking = 0x1,
+        Connected = 0x2,
+    }
+ 
     public enum PortType
     {
         /// <summary>
@@ -48,23 +70,6 @@ namespace System.Net.Rina
         Unknown = -1,   
 
     }
-
-    public enum PortShutdown
-    {
-        ///<summary>
-        /// Shutdown port for receive.
-        /// </summary>
-        Receive = 0x00,
-        ///<summary>
-        /// Shutdown port for send.
-        ///</summary>
-        Send = 0x01,
-        ///<summary>
-        /// Shutdown socket for both send and receive.
-        /// </summary>
-        Both = 0x02,
-    }
-
     public enum SelectMode
     {
         /// <devdoc>
@@ -86,39 +91,27 @@ namespace System.Net.Rina
         /// </devdoc>
         SelectError = 2
     } // 
-
-    [Flags]
-    public enum PortFlags
-    {
-        None = 0x00000000,
-        OutOfBand = 0x00000001,
-        Peek = 0x00000002,
-        DontRoute = 0x00000004,
-        MaxIOVectorLength = 0x00000010,
-        Truncated = 0x00000100,
-        ControlDataTruncated = 0x00000200,
-        Broadcast = 0x00000400,
-        Multicast = 0x00000800,
-        Partial = 0x00008000,
-    }
-
-    [Flags]
-    public enum PortInformationOptions: int
-    {
-        NonBlocking = 0x1,
-        Connected = 0x2,
-    }
     /// <summary>
     /// Represents a port used to identify communication within DIF.
     /// </summary>
-    public class Port
-	{
+    public class Port : IDisposable
+    {
         /// <summary>
         /// Defines default close timeout of all ports.
         /// </summary>
         internal const int DefaultCloseTimeout = -1;
+
+    
         private int m_IntCleanedUp = 0;
 
+        internal Port(IRinaIpc ipc, UInt32 id)
+        {
+            this.Ipc = ipc;
+            this.Id = id;
+            this.PortType = PortType.Stream;
+        }
+
+        public Sockets.AddressFamily AddressFamily { get; internal set; }
 
         /// <summary>
         /// Gets true id data are available for reading through this port; otherwise it returns false.
@@ -132,14 +125,6 @@ namespace System.Net.Rina
         }
 
         /// <summary>
-        /// IPC object represented by its <see cref="IRinaIpc"/> interface that owns this <see cref="Port"/>. 
-        /// </summary>
-        public IRinaIpc Ipc { get; private set; }
-        /// <summary>
-        /// <see cref="ulong"/> value representing a unique identifier of the <see cref="Port"/> within the current IPC.  
-        /// </summary>
-		public UInt64 Id { get; private set; }
-        /// <summary>
         /// Gets or sets a value that indicates whether the Port is in blocking mode.
         /// </summary>
         public bool Blocking
@@ -150,7 +135,7 @@ namespace System.Net.Rina
             }
             set
             {
-                Ipc.SetBlocking(this, value);    
+                Ipc.SetBlocking(this, value);
             }
         }
 
@@ -158,12 +143,44 @@ namespace System.Net.Rina
         /// Gets a value indicating whether this <see cref="System.Net.Rina.Port"/> is connected.
         /// </summary>
         /// <value><c>true</c> if connected; otherwise, <c>false</c>.</value>
-        public bool Connected 
-		{  
-			get {
+        public bool Connected
+        {
+            get
+            {
                 return this.Ipc.GetPortInformation(this).HasFlag(PortInformationOptions.Connected);
-			}		
-		}
+            }
+        }
+
+        /// <summary>
+        /// <see cref="ulong"/> value representing a unique identifier of the <see cref="Port"/> within the current IPC.  
+        /// </summary>
+		public UInt32 Id { get; private set; }
+
+        /// <summary>
+        /// IPC object represented by its <see cref="IRinaIpc"/> interface that owns this <see cref="Port"/>. 
+        /// </summary>
+        public IRinaIpc Ipc { get; private set; }
+
+        // public ConnectionEndPoint LocalEndPoint { get; }
+        public bool NoDelay { get; set; }
+
+        /// <summary>
+        /// Gets the type of the current <see cref="Port"/> object. 
+        /// </summary>
+        public PortType PortType { get; internal set; }
+
+        // public ProtocolType ProtocolType { get; }
+        public int ReceiveBufferSize { get; set; }
+
+        // public EndPoint RemoteEndPoint { get; }
+        public int SendBufferSize { get; set; }
+
+        public short Ttl { get; set; }
+
+        /// <summary>
+        /// Points to associated connection end point. If the port is disconnected then this value is 0.
+        /// </summary>
+        internal UInt64 CepId { get; set; }
 
         internal bool CleanedUp
         {
@@ -173,45 +190,21 @@ namespace System.Net.Rina
             }
         }
 
-        /// <summary>
-        /// Gets the type of the current <see cref="Port"/> object. 
-        /// </summary>
-        public PortType PortType { get; internal set; }
+        public void Dispose() { }
 
-        internal Port (IRinaIpc ipc, UInt64 id)
-		{
-			this.Ipc = ipc;
-			this.Id = id;
-            this.PortType = PortType.Stream;
-		}
 
-        internal void InternalShutdown(PortShutdown direction)
+        public void Shutdown(TimeSpan timeout)
         {
-            throw new NotImplementedException();
+            Ipc.Disconnect(this, timeout);
+            m_IntCleanedUp = 1;
         }
 
         internal void Close(int closeTimeout)
         {
-            this.Ipc.DeallocateFlow(this);
+            Ipc.Abort(this);
+            m_IntCleanedUp = 1;
         }
-
-        /// <summary>
-        /// Receives data from a connected port into a specific location of the receive buffer.
-        /// </summary>
-        /// <param name="buffer"></param>
-        /// <param name="offset"></param>
-        /// <param name="size"></param>
-        /// <returns></returns>
-        internal byte[] Receive()
-        {
-            return this.Ipc.Receive(this);
-        }
-
-        internal int Send(byte[] buffer, int offset, int count)
-        {
-            return this.Ipc.Send(this, buffer, offset, count);
-        }
-
+      
         /// <summary>
         ///  Determines the status of the port.
         /// </summary>
@@ -230,38 +223,41 @@ namespace System.Net.Rina
             }
             throw new NotImplementedException();
         }
+        /// <summary>
+        /// Receives data from a connected port into a specific location of the receive buffer.
+        /// </summary>
+        /// <param name="buffer"></param>
+        /// <param name="offset"></param>
+        /// <param name="size"></param>
+        /// <returns></returns>
+        public int Receive(byte[] buffer,int offset,int size, PortFlags portFlags)
+        {
+            return this.Ipc.Receive(this, buffer, offset, size, portFlags);
+        }
 
-        
+        public int Send(byte[] buffer, int offset, int count)
+        {
+            return this.Ipc.Send(this, buffer, offset, count);
+        }
+
+
+        /// <summary>
+        /// Reads data from the given <see cref="Port"/>.
+        /// </summary>
+        /// <param name="port"></param>
+        /// <returns>A byte array containing received data. If operation would block than the result is zero length array. </returns>
+        public byte[] Receive()
+        {
+            var buffer = new byte[4096];
+            var bytesRead = Receive(buffer, 0, buffer.Length, PortFlags.None);
+            if (bytesRead > 0)
+            {
+                var result = new byte[bytesRead];
+                Buffer.BlockCopy(buffer, 0, result, 0, bytesRead);
+                return result;
+            }
+            else return null;                
+        }
     }
-    /*
-     * 
-     * 
-   public Socket(SocketType socketType, ProtocolType protocolType);
-public Socket(AddressFamily addressFamily, SocketType socketType, ProtocolType protocolType);
-public static bool OSSupportsIPv4 { get; }
-public static bool OSSupportsIPv6 { get; }
-public AddressFamily AddressFamily { get; }
-public bool Connected { get; }
-public EndPoint LocalEndPoint { get; }
-public bool NoDelay { get; set; }
-public ProtocolType ProtocolType { get; }
-public int ReceiveBufferSize { get; set; }
-public EndPoint RemoteEndPoint { get; }
-public int SendBufferSize { get; set; }
-public short Ttl { get; set; }
-public static void CancelConnectAsync(SocketAsyncEventArgs e);
-public static bool ConnectAsync(SocketType socketType, ProtocolType protocolType, SocketAsyncEventArgs e);
-public bool AcceptAsync(SocketAsyncEventArgs e);
-public void Bind(EndPoint localEP);
-public bool ConnectAsync(SocketAsyncEventArgs e);
-public void Dispose();
-public void Listen(int backlog);
-public bool ReceiveAsync(SocketAsyncEventArgs e);
-public bool ReceiveFromAsync(SocketAsyncEventArgs e);
-public bool SendAsync(SocketAsyncEventArgs e);
-public bool SendToAsync(SocketAsyncEventArgs e);
-public void Shutdown(SocketShutdown how);
-protected virtual void Dispose(bool disposing);
-*/
 }
 

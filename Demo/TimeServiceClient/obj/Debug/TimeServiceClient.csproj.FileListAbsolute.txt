@@ -20,5 +20,3 @@ C:\Users\Ondrej\Documents\GitHub\RINASharp\Demo\TimeServiceClient\obj\Debug\tsc.
 C:\Users\Ondrej\Documents\GitHub\RINASharp\Demo\TimeServiceClient\obj\Debug\tsc.pdb
 C:\Users\Ondrej\Documents\GitHub\RINASharp\Demo\TimeServiceClient\bin\Debug\ConsoleToolkit.dll
 C:\Users\Ondrej\Documents\GitHub\RINASharp\Demo\TimeServiceClient\bin\Debug\ConsoleToolkit.xml
-C:\Users\Ondrej\Documents\GitHub\RINASharp\Demo\TimeServiceClient\bin\Debug\PacketDotNet.dll
-C:\Users\Ondrej\Documents\GitHub\RINASharp\Demo\TimeServiceClient\bin\Debug\PacketDotNet.xml

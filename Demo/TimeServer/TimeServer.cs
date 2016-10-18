@@ -53,7 +53,7 @@ namespace TimeService
 
             using (var host = new IpcHost())
             {
-                var shimIpcProcess = IpcProcessFactory.CreateProcess(shimType, Address);
+                var shimIpcProcess = IpcProcessFactory.CreateProcess(host, shimType, Address);
                 shimIpcProcess.RegisterApplication(new ApplicationNamingInfo(ServerName, "1", "TimeServiceProtocol", "1"), applicationRequestHandler);
 
                 var evh = new EventWaitHandle(false, EventResetMode.AutoReset);

@@ -44,16 +44,16 @@ namespace System.Net.Rina
 	/// </remarks>
 	public class ApplicationNamingInfo : ISerializable 
 	{
-		/// <summary>
-		/// Gets the name of the process.
-		/// </summary>
-		/// <value>The name of the process.</value>
-		public String ProcessName { get; private set; }
+        /// <summary>
+        /// Gets the name of the process.
+        /// </summary>
+        /// <value>The name of the process.</value>
+        public String ApplicationName { get; private set; }
         /// <summary>
         /// Gets the process instance.
         /// </summary>
         /// <value>The process instance.</value>
-        public String ProcessInstance { get; private set; }
+        public String ApplicationInstance { get; private set; }
         /// <summary>
         /// Gets the name of the application entity which is used by application process.
         /// </summary>
@@ -65,11 +65,45 @@ namespace System.Net.Rina
         /// </summary>
         /// <value>The entity instance.</value>
         public String EntityInstance { get; private set; }
+        /// <summary>
+        /// Gets connection string representation that consists of 
+        /// $"apps/{ProcessName}/{ProcessInstance}".
+        /// </summary>
+        public string ConnectionString
+        {
+            get
+            {
+                return $"apps/{ApplicationName}/{ApplicationInstance}";
+            }
+        }
+
+        const string ApplicationNamespace = "apps";
+
+        /// <summary>
+        /// Creates a new object from the connection string.
+        /// </summary>
+        /// <param name="connnectionString"></param>
+        public ApplicationNamingInfo(string connnectionString)
+        {
+            if (connnectionString.StartsWith(ApplicationNamespace))
+            {
+                var splitArr = connnectionString.Substring(ApplicationNamespace.Length).Trim('/').Split('/');
+                ApplicationName = splitArr.Length >= 1 ? splitArr[0] : String.Empty;
+                ApplicationInstance = splitArr.Length >= 2 ? splitArr[1] : String.Empty;
+                EntityName = splitArr.Length >= 3 ? splitArr[2] : String.Empty;
+                EntityInstance = splitArr.Length >= 4 ? splitArr[3] : String.Empty;
+            }
+            else
+            {
+                ApplicationName = connnectionString;
+            }
+        }
+
 
         public override int GetHashCode()
         {
-            return (this.ProcessName ?? String.Empty).GetHashCode() ^
-                   (this.ProcessInstance ?? String.Empty).GetHashCode() ^
+            return (this.ApplicationName ?? String.Empty).GetHashCode() ^
+                   (this.ApplicationInstance ?? String.Empty).GetHashCode() ^
                    (this.EntityName ?? String.Empty).GetHashCode() ^
                    (this.EntityInstance ?? String.Empty).GetHashCode();
         }
@@ -77,8 +111,8 @@ namespace System.Net.Rina
         {
             var that = (ApplicationNamingInfo)obj;
             return (that != null) ?
-                    String.Equals(this.ProcessName, that.ProcessName, StringComparison.InvariantCultureIgnoreCase) &&
-                    String.Equals(this.ProcessInstance, that.ProcessInstance, StringComparison.InvariantCultureIgnoreCase) &&
+                    String.Equals(this.ApplicationName, that.ApplicationName, StringComparison.InvariantCultureIgnoreCase) &&
+                    String.Equals(this.ApplicationInstance, that.ApplicationInstance, StringComparison.InvariantCultureIgnoreCase) &&
                     String.Equals(this.EntityName, that.EntityName, StringComparison.InvariantCultureIgnoreCase) &&
                     String.Equals(this.EntityInstance, that.EntityInstance, StringComparison.InvariantCultureIgnoreCase)
                 : false;
@@ -86,16 +120,15 @@ namespace System.Net.Rina
 
         public ApplicationNamingInfo(String apName, String apInstance, String aeName, String aeInstance)
 		{
-			this.ProcessName = apName;
-			this.ProcessInstance = apInstance;
+			this.ApplicationName = apName;
+			this.ApplicationInstance = apInstance;
 			this.EntityName = aeName;
 			this.EntityInstance = aeInstance;
 		}
 
-
         public override string ToString()
         {
-            return this.ProcessName + "." + this.ProcessInstance + "+" + this.EntityName + "." + this.EntityInstance;
+            return this.ApplicationName + "." + this.ApplicationInstance + "+" + this.EntityName + "." + this.EntityInstance;
         }
         public void GetObjectData(SerializationInfo info, StreamingContext context)
         {
@@ -113,8 +146,8 @@ namespace System.Net.Rina
         /// <returns>True if this obejct matches that object.</returns>
         internal bool Matches(ApplicationNamingInfo that)
         {
-            return (String.Equals(this.ProcessName, that.ProcessName, StringComparison.InvariantCultureIgnoreCase) || String.IsNullOrWhiteSpace(this.ProcessName)) &&
-                   (String.Equals(this.ProcessInstance, that.ProcessInstance, StringComparison.InvariantCultureIgnoreCase) || String.IsNullOrWhiteSpace(this.ProcessInstance)) &&
+            return (String.Equals(this.ApplicationName, that.ApplicationName, StringComparison.InvariantCultureIgnoreCase) || String.IsNullOrWhiteSpace(this.ApplicationName)) &&
+                   (String.Equals(this.ApplicationInstance, that.ApplicationInstance, StringComparison.InvariantCultureIgnoreCase) || String.IsNullOrWhiteSpace(this.ApplicationInstance)) &&
                    (String.Equals(this.EntityName, that.EntityName, StringComparison.InvariantCultureIgnoreCase) || String.IsNullOrWhiteSpace(this.EntityName)) &&
                    (String.Equals(this.EntityInstance, that.EntityInstance, StringComparison.InvariantCultureIgnoreCase) || String.IsNullOrWhiteSpace(this.EntityInstance));
         }
