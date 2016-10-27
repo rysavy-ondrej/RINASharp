@@ -20,10 +20,31 @@
 //  along with this program; if not, write to the Free Software
 //  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA
 //
-using System;
 
 namespace System.Net.Rina
 {
+
+    public class PortIdType : Kleinware.LikeType.LikeType<UInt32>
+    {
+        public PortIdType(uint value, bool isNullAllowed = false) : base(value, isNullAllowed)
+        {
+        }
+    }
+
+    public class PortIdSpace
+    {
+        Helpers.UniqueRandomUInt32 m_space = new Helpers.UniqueRandomUInt32();
+
+        public PortIdType Next()
+        {
+            return new PortIdType(m_space.Next());
+        }
+        public void Release(PortIdType val)
+        {
+            m_space.Release(val);
+        }
+    }
+
     [Flags]
     public enum PortFlags
     {
@@ -46,6 +67,16 @@ namespace System.Net.Rina
         Connected = 0x2,
     }
  
+
+    public enum PortState
+    {
+        Connecting, 
+        Open, 
+        ReadOnly,
+        WriteOnly,
+        Closed
+    }
+
     public enum PortType
     {
         /// <summary>
@@ -104,11 +135,11 @@ namespace System.Net.Rina
     
         private int m_IntCleanedUp = 0;
 
-        internal Port(IRinaIpc ipc, UInt32 id)
+        internal Port(IRinaIpc ipc, PortIdType id)
         {
-            this.Ipc = ipc;
-            this.Id = id;
-            this.PortType = PortType.Stream;
+            Ipc = ipc;
+            Id = id;
+            PortType = PortType.Stream;
         }
 
         public Sockets.AddressFamily AddressFamily { get; internal set; }
@@ -154,7 +185,7 @@ namespace System.Net.Rina
         /// <summary>
         /// <see cref="ulong"/> value representing a unique identifier of the <see cref="Port"/> within the current IPC.  
         /// </summary>
-		public UInt32 Id { get; private set; }
+		public PortIdType Id { get; private set; }
 
         /// <summary>
         /// IPC object represented by its <see cref="IRinaIpc"/> interface that owns this <see cref="Port"/>. 
@@ -180,7 +211,7 @@ namespace System.Net.Rina
         /// <summary>
         /// Points to associated connection end point. If the port is disconnected then this value is 0.
         /// </summary>
-        internal UInt64 CepId { get; set; }
+        internal CepIdType CepId { get; set; }
 
         internal bool CleanedUp
         {

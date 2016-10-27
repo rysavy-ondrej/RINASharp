@@ -1,6 +1,6 @@
 ﻿using System.Net.Sockets;
 
-namespace System.Net.Rina.Shims
+namespace System.Net.Rina.Shims.NamedPipes
 {
     [Serializable]
     public class PipeEndPoint : EndPoint

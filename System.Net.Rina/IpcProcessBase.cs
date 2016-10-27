@@ -7,126 +7,31 @@ using System.Threading.Tasks.Dataflow;
 
 namespace System.Net.Rina
 {
-    public enum ConnectionType
-    {
-        /// <summary>
-        /// Stream oriented connection.
-        /// </summary>
-        Stream = 1,
-
-        /// <summary>
-        /// Datagram (block) oriented connection type.
-        /// </summary>
-        Dgram = 2,
-
-        /// <summary>
-        /// Raw connection type.
-        /// </summary>
-        Raw = 3,
-
-        /// <summary>
-        /// Reliably delivered message oriented connection type.
-        /// </summary>
-        Rdm = 4,
-
-        /// <summary>
-        /// Unknown type.
-        /// </summary>
-        Unknown = -1,
-    }
-
     /// <summary>
-    /// Describes the local endpoint of the connection between two IPCs.
+    /// Defines control code for 
+    /// <see cref="IpcProcessBase.wsaSetIoctl(ConnectionEndpoint, WsaControlCode, object)"/> 
+    /// and
+    /// <see cref="IpcProcessBase.wsaGetIoctl(ConnectionEndpoint, WsaControlCode, out object)"/>.
     /// </summary>
-    public class ConnectionEndpoint
+    public enum WsaControlCode
     {
         /// <summary>
-        /// This is receive queue. New data are enqueued in this queue by the IPC process. Dequeue
+        /// Enable or disable non-blocking mode on connection end point (FIONBIO).
         /// </summary>
-        public readonly BufferBlock<ArraySegment<byte>> ReceiveQueue = new BufferBlock<ArraySegment<byte>>();
-
+        NonBlocking = 0x01,
         /// <summary>
-        /// Provides information about the connection associated with the current ConnectionEndpoint.
+        /// Discards current contents of the sending queue associated with this connection end point (SIO_FLUSH).
         /// </summary>
-        public ConnectionInformation Information;
-
+        Flush = 0x02,
         /// <summary>
-        /// Local ConnectionEndPoint Id is used to identify the connection.
+        /// Determines the amount of data that can be read atomically from connection end point. (FIONREAD)
         /// </summary>
-        public ulong LocalCepId;
-
+        AvailableData = 0x03,
         /// <summary>
-        /// Remote ConnectionEndPoint Id is used to identify the connection.
+        /// Gets the <see cref="Task"/> that completes when data is available for read.
         /// </summary>
-        public ulong RemoteCepId;
+        AvailableDataTask = 0x04,
 
-        /// <summary>
-        /// Actual size of the buffer. Represents total number of bytes currently in <see cref="ReceiveQueue"/>  and <see cref="ReceiveBuffer"/>.
-        /// </summary>
-        internal int ActualBufferSize;
-
-        internal Port Port;
-
-        public ConnectionEndpoint()
-        {
-            ReceiveBufferSize = 4096 * 4;
-            ReceiveTimeout = TimeSpan.FromSeconds(30);
-            Blocking = true;
-        }
-
-        /// <summary>
-        /// Represents an address family used with this connection end point.
-        /// </summary>
-        public Sockets.AddressFamily AddressFamily { get; internal set; }
-
-        /// <summary>
-        /// Specifies whether the port is blocking or non-blocking.
-        /// </summary>
-        public bool Blocking { get; internal set; }
-
-        /// <summary>
-        /// Determines if the current endpoint is connected or disconnected.
-        /// </summary>
-        public bool Connected { get; internal set; }
-
-        /// <summary>
-        /// Represents connection type of this connection end point.
-        /// </summary>
-        public ConnectionType ConnectionType { get; internal set; }
-
-        /// <summary>
-        /// This is byte buffer. Bytes are read from this buffer.
-        /// </summary>
-        public Nullable<ArraySegment<byte>> ReceiveBuffer { get; internal set; }
-
-        /// <summary>
-        /// Sets or gets the maximum number of bytes that can be buffered.
-        /// </summary>
-        public int ReceiveBufferSize { set; get; }
-
-        /// <summary>
-        /// An amount of time for which the IPC process will wait until the completion of receive operation.
-        /// </summary>
-        public TimeSpan ReceiveTimeout { set; get; }
-
-        public override string ToString()
-        {
-            return $"{Information.SourceApplication}@{Information.SourceAddress}:{LocalCepId} --> {Information.DestinationApplication}@{Information.DestinationAddress}:{RemoteCepId} [{Connected}]";
-        }
-    }
-
-    /// <summary>
-    /// This class describes a single connection.
-    /// </summary>
-    public class ConnectionInformation
-    {
-        public Address DestinationAddress;
-
-        public ApplicationNamingInfo DestinationApplication;
-
-        public Address SourceAddress;
-
-        public ApplicationNamingInfo SourceApplication;
     }
 
     /// <summary>
@@ -137,75 +42,58 @@ namespace System.Net.Rina
         /// <summary>
         /// Safe way to create random and unique CepId.
         /// </summary>
-        protected Helpers.UniqueRandomUInt64 _cepidSpace = new Helpers.UniqueRandomUInt64();
+        protected CepIdSpace m_cepidSpace = new CepIdSpace();
 
         /// <summary>
-        /// Represents deallocated flows/connections.
+        /// Represents deallocated connections.
         /// This map represents a function: LocalCepid -> ConnectionEndpoint.
         /// </summary>
         /// <remarks>
         /// Connections rest for a while in this map before they are removed. It is because some operations
         /// may be still in progress that would require an access to a connection information.
         /// </remarks>
-        protected Dictionary<ulong, ConnectionEndpoint> _connectionsClosed = new Dictionary<ulong, ConnectionEndpoint>();
+        protected Dictionary<ulong, ConnectionEndpoint> m_connectionsClosed = new Dictionary<ulong, ConnectionEndpoint>();
 
-        protected Dictionary<ulong, ConnectionEndpoint> _connectionsClosing = new Dictionary<ulong, ConnectionEndpoint>();
+        protected Dictionary<ulong, ConnectionEndpoint> m_connectionsClosing = new Dictionary<ulong, ConnectionEndpoint>();
 
-        protected Dictionary<ulong, ConnectionEndpoint> _connectionsConnecting = new Dictionary<ulong, ConnectionEndpoint>();
+        protected Dictionary<ulong, ConnectionEndpoint> m_connectionsConnecting = new Dictionary<ulong, ConnectionEndpoint>();
 
         /// <summary>
         /// Represents allocated flows/connections.
         /// This map represents a function: LocalCepid -> ConnectionEndpoint.
         /// </summary>
-        protected Dictionary<ulong, ConnectionEndpoint> _connectionsOpen = new Dictionary<ulong, ConnectionEndpoint>();
+        protected Dictionary<ulong, ConnectionEndpoint> m_connectionsOpen = new Dictionary<ulong, ConnectionEndpoint>();
 
         /// <summary>
         /// The <see cref="Address"/> of the current <see cref="PipeIpcProcess"/> instance.
         /// </summary>
-        protected Address _localAddress;
+        protected Address m_localAddress;
 
         /// <summary>
         /// Helper that manages unique randomly generated port numbers.
         /// </summary>
-        protected Helpers.UniqueRandomUInt32 _portidSpace = new Helpers.UniqueRandomUInt32();
+        protected PortIdSpace m_portidSpace = new PortIdSpace();
 
         /// <summary>
         /// Tracks all created ports.
         /// </summary>
-        protected Dictionary<ulong, Port> _portsAllocated = new Dictionary<ulong, Port>();
+        protected Dictionary<ulong, Port> m_portsAllocated = new Dictionary<ulong, Port>();
 
         /// <summary>
         /// Collection all registered applications and their request handlers.
         /// </summary>
-        private Dictionary<Guid, RegisteredApplication> _registeredApplications = new Dictionary<Guid, RegisteredApplication>();
+        private Dictionary<Guid, RegisteredApplication> m_registeredApplications = new Dictionary<Guid, RegisteredApplication>();
 
-        private object _registeredApplicationsLock = new object();
+        private object m_registeredApplicationsLock = new object();
 
-        public enum WsaControlCode
-        {
-            /// <summary>
-            /// Enable or disable non-blocking mode on connection end point (FIONBIO).
-            /// </summary>
-            NonBlocking,
-
-            /// <summary>
-            /// Discards current contents of the sending queue associated with this connection end point (SIO_FLUSH).
-            /// </summary>
-            Flush,
-
-            /// <summary>
-            /// Determine the amount of data that can be read atomically from connection end point. (FIONREAD)
-            /// </summary>
-            AvailableData
-        }
-
-        public Address LocalAddress { get { return _localAddress; } }
+        public Address LocalAddress { get { return m_localAddress; } }
 
         public void Abort(Port port)
         {
+            
             throw new NotImplementedException();
         }
-
+       
         /// <summary>
         /// Allocates the new flow according to the specified information.
         /// </summary>
@@ -218,10 +106,11 @@ namespace System.Net.Rina
         /// <param name="flowInfo">Flow information object.</param>
         public Port Connect(FlowInformation flowInfo)
         {
-            var cep = wsaConnection(flowInfo.DestinationAddress.Family, ConnectionType.Rdm);
+            var ctype = GetConnectionType(flowInfo);
 
-            var qos = new QosParameters();
-            object remoteCepid = 0ul;
+            var cep = wsaConnection(flowInfo.DestinationAddress.Family, ConnectionType.Rdm);
+            
+            
             var ci = new ConnectionInformation()
             {
                 SourceAddress = flowInfo.SourceAddress,
@@ -229,35 +118,62 @@ namespace System.Net.Rina
                 DestinationAddress = flowInfo.DestinationAddress,
                 DestinationApplication = flowInfo.DestinationApplication
             };
+            CepIdType remoteCepid;
+            var qos = SelectQosParameters(flowInfo);
 
             var error = wsaConnect(cep, ci, cep.LocalCepId, out remoteCepid, qos, qos);
             if (error == PortError.Success)
             {
-                cep.Information = ci;
-
-                cep.RemoteCepId = (ulong)remoteCepid;
-
-                cep.Port = new Port(this, _portidSpace.Next())
-                {
-                    CepId = cep.LocalCepId
-                };
-
-                _connectionsOpen.Add(cep.LocalCepId, cep);
-                return cep.Port;
+                return wsaBind(cep, ci, remoteCepid);               
             }
             else
             {
+                wsaClose(cep);
                 return null;
             }
+        }
+
+        /// <summary>
+        /// Creates fresh <see cref="Port"/> and binds it to the specified <see cref="ConnectionEndpoint"/>. Also it 
+        /// initializes the <see cref="ConnectionEndpoint"/> with information provided by <see cref="ConnectionInformation"/> and
+        /// remote <see cref="CepIdType"/>.
+        /// </summary>
+        /// <param name="cep">A <see cref="ConnectionEndpoint"/> object that has not been bound so far.</param>
+        /// <param name="ci"><see cref="ConnectionInformation"/> used to describe the connection.</param>
+        /// <param name="remoteCepId">Remote CepId used to initialize the provided <see cref="ConnectionEndpoint"/>.</param>
+        /// <returns></returns>
+        protected Port wsaBind(ConnectionEndpoint cep, ConnectionInformation ci, CepIdType remoteCepId)
+        {
+            cep.RemoteCepId = remoteCepId;
+            cep.Information = ci;                    
+            cep.Port = new Port(this, m_portidSpace.Next())
+            {
+                CepId = cep.LocalCepId
+            };
+            cep.Connected = true;
+            m_connectionsOpen.Add(cep.LocalCepId, cep);
+            m_portsAllocated.Add(cep.Port.Id, cep.Port);
+            return cep.Port;
+        }
+
+
+        private QosParameters SelectQosParameters(FlowInformation flowInfo)
+        {
+            return new QosParameters();
+        }
+
+        private ConnectionType GetConnectionType(FlowInformation flowInfo)
+        {
+            return ConnectionType.Rdm;
         }
 
         public bool DataAvailable(Port port)
         {
             ConnectionEndpoint cep;
-            if (_connectionsOpen.TryGetValue(port.CepId, out cep))
+            if (m_connectionsOpen.TryGetValue(port.CepId, out cep))
             {
                 object value;
-                wsaGetIoctl(cep, WsaControlCode.AvailableData, out value);
+                wsaIoctl(cep, WsaControlCode.AvailableData, null, out value);
                 return (bool)value;
             }
             return false;
@@ -273,9 +189,12 @@ namespace System.Net.Rina
         public Task<bool> DataAvailableAsync(Port port, CancellationToken ct)
         {
             ConnectionEndpoint cep;
-            if (_connectionsOpen.TryGetValue(port.CepId, out cep))
+            if (m_connectionsOpen.TryGetValue(port.CepId, out cep))
             {
-                return cep.ReceiveQueue.OutputAvailableAsync(ct);
+                object value;
+                wsaIoctl(cep, WsaControlCode.AvailableDataTask, ct, out value);
+
+                return value as Task<bool>;
             }
             throw new PortException(PortError.InvalidArgument);
         }
@@ -283,32 +202,91 @@ namespace System.Net.Rina
         public void DeregisterApplication(ApplicationInstanceHandle appInfo, DeregisterApplicationOption option, TimeSpan timeout)
         {
             if (option == DeregisterApplicationOption.DisconnectClients) throw new NotSupportedException($"Option {option} is not supported. Only {DeregisterApplicationOption.WaitForCompletition} is currently supported.");
-            lock (_registeredApplicationsLock)
+            lock (m_registeredApplicationsLock)
             {
-                _registeredApplications.Remove(appInfo.Handle);
+                m_registeredApplications.Remove(appInfo.Handle);
             }
         }
+
 
         /// <summary>
         /// This gracefully shutdown the connection.
         /// </summary>
         /// <param name="port"></param>
-        public void Disconnect(Port port, TimeSpan timeout)
+        /// <param name="timeout">Specifies the time interval during which the process waits for DisconnectResponse.</param>
+        /// <returns>true if operation completed or false if timeout.</returns>
+        public bool Disconnect(Port port, TimeSpan timeout)
         {
             ConnectionEndpoint cep;
-            if (_connectionsOpen.TryGetValue(port.CepId, out cep))
+            if (m_connectionsOpen.TryGetValue(port.CepId, out cep))
             {
                 PortError errorCode = wsaSendDisconnect(cep);
                 if (errorCode != PortError.Success) throw new PortException(errorCode);
+
+                // wait for DisconnectResponse:
+                try
+                {
+                    cep.DisconnectResponseReceived.Wait(timeout);
+                    return true;
+                }
+                catch(TimeoutException)
+                {
+                    return false;
+                }
             }
             else
                 throw new PortException(PortError.InvalidArgument);
         }
 
+
+        /// <summary>
+        /// Called by the derived class when disconnect request message was received. 
+        /// If disconnect request contains Abort flag then all buffered data 
+        /// in SEND queue will be removed. Otherwise, it is possible to send 
+        /// the remaining content of the buffer. 
+        /// The RECEIVE buffer will be closed for further messages but
+        /// the application may read available bytes. 
+        /// </summary>
+        /// <param name="cep"></param>
+        /// <param name="abortRequested"></param>
+        /// <returns>A <see cref="Task"/> that represents the asynchronous operation and completion of the disconnect request.</returns>
+        protected Task<bool> OnDisconnectRequest(ConnectionEndpoint cep, bool abortRequested = false)
+        {
+            // TODO: What to do? 
+            // i)  Discard the queue content
+            // ii) Let the IPC to process the remaining data            
+            if (abortRequested)
+            {                
+                m_connectionsOpen.Remove(cep.Id);                
+                m_connectionsClosed.Add(cep.Id, cep);
+                cep.State = ConnectionState.Closed;
+                return Task<bool>.Run(() => true);
+            }
+            else
+            {
+                m_connectionsOpen.Remove(cep.Id);                
+                m_connectionsClosing.Add(cep.Id, cep);
+                cep.State = ConnectionState.Closing;
+                return Task<bool>.Run(() =>
+                {
+                    cep.SendCompletition.Wait();
+                    return true;
+                });
+            }
+        }
+        protected void OnDisconnectResponse(ConnectionEndpoint cep)
+        {
+            m_connectionsOpen.Remove(cep.Id);
+            m_connectionsClosed.Add(cep.Id, cep);
+            cep.State = ConnectionState.Closed;
+            cep.DisconnectResponseReceived.Set();                        
+        }
+
+
         public PortInformationOptions GetPortInformation(Port port)
         {
             ConnectionEndpoint cep;
-            if (_connectionsOpen.TryGetValue(port.CepId, out cep))
+            if (m_connectionsOpen.TryGetValue(port.CepId, out cep))
             {
                 PortInformationOptions pi = 0;
                 pi |= !cep.Blocking ? PortInformationOptions.NonBlocking : 0;
@@ -331,7 +309,7 @@ namespace System.Net.Rina
         public int Receive(Port port, byte[] buffer, int offset, int size, PortFlags socketFlags)
         {
             ConnectionEndpoint cep;
-            if (_connectionsOpen.TryGetValue(port.CepId, out cep))
+            if (m_connectionsOpen.TryGetValue(port.CepId, out cep) || m_connectionsClosing.TryGetValue(port.CepId, out cep))
             {
                 int bytesReceived;
                 var errorCode = wsaRecv(cep, buffer, offset, size, out bytesReceived, socketFlags);
@@ -343,12 +321,12 @@ namespace System.Net.Rina
 
         public ApplicationInstanceHandle RegisterApplication(ApplicationNamingInfo appInfo, ConnectionRequestHandler reqHandler)
         {
-            lock (_registeredApplicationsLock)
+            lock (m_registeredApplicationsLock)
             {
                 Trace.TraceInformation($"Application '{appInfo.ApplicationName}' registered at process {this.LocalAddress}.");
 
                 var appHandle = new ApplicationInstanceHandle();
-                this._registeredApplications.Add(appHandle.Handle, new RegisteredApplication() { Handle = appHandle, ApplicationInfo = appInfo, RequestHandler = reqHandler });
+                this.m_registeredApplications.Add(appHandle.Handle, new RegisteredApplication() { Handle = appHandle, ApplicationInfo = appInfo, RequestHandler = reqHandler });
                 return appHandle;
             }
         }
@@ -356,47 +334,98 @@ namespace System.Net.Rina
         public int Send(Port port, byte[] buffer, int offset, int size)
         {
             ConnectionEndpoint cep;
-            if (_connectionsOpen.TryGetValue(port.CepId, out cep))
+            if (m_connectionsOpen.TryGetValue(port.CepId, out cep))
             {
-                var error = wsaSend(cep, buffer, offset, size);
-                if (error != PortError.Success)
-                    throw new PortException(error);
-                return size;
+                    var error = wsaSend(cep, buffer, offset, size);
+                    if (error != PortError.Success)
+                        throw new PortException(error);
+                    return size;
             }
             else
-                throw new PortException(PortError.InvalidArgument);
+                throw new PortException(PortError.NotConnected);
         }
 
         public void SetBlocking(Port port, bool value)
         {
             ConnectionEndpoint cep;
-            if (_connectionsOpen.TryGetValue(port.CepId, out cep))
+            if (m_connectionsOpen.TryGetValue(port.CepId, out cep))
             {
                 cep.Blocking = value;
             }
         }
 
+        /// <summary>
+        /// Gets the <see cref="ConnectionState"/> of the connection end point specified by the <paramref name="cepid"/>.
+        /// </summary>
+        /// <param name="cepid"></param>
+        /// <returns>One of the connection state as defined by <see cref="ConnectionState"/>. </returns>
+        internal ConnectionState GetConnectionState(UInt64 cepid)
+        {
+            if (m_connectionsOpen.ContainsKey(cepid)) return ConnectionState.Open;
+            if (m_connectionsClosed.ContainsKey(cepid)) return ConnectionState.Closed;
+            if (m_connectionsConnecting.ContainsKey(cepid)) return ConnectionState.Connecting;
+            if (m_connectionsClosing.ContainsKey(cepid)) return ConnectionState.Closing;
+            return ConnectionState.Detached;
+        }
         protected RegisteredApplication FindApplication(string appName)
         {
-            var appInfo = _registeredApplications.Values.FirstOrDefault(r => { return r.ApplicationInfo.ApplicationName.Equals(appName, StringComparison.InvariantCultureIgnoreCase); });
+            var appInfo = m_registeredApplications.Values.FirstOrDefault(r => { return r.ApplicationInfo.ApplicationName.Equals(appName, StringComparison.InvariantCultureIgnoreCase); });
             return appInfo;
         }
 
+        /// <summary>
+        /// The wsaCleanup function terminates the use of the IPC process. Override this function 
+        /// to implement proper handling of events related to shutting down the current IPC.
+        /// </summary>
+        /// <returns>A result of the operation as a <see cref="PortError"/> value.</returns>
         protected abstract PortError wsaCleanup();
 
-        protected abstract PortError wsaConnect(ConnectionEndpoint cep, ConnectionInformation ci, object callerData, out object calleeData, QosParameters outflow, QosParameters inflow);
-
+        /// <summary>
+        /// This method establishes a connection to another application, exchanges connect data, and
+        /// specifies required quality of service based on the specified QosParameters.
+        /// </summary>
+        /// <param name="cep"><see cref="ConnectionEndpoint"/> used to create a new connection. This endpoint must not be already connected.</param>
+        /// <param name="ci"><see cref="ConnectionInformation"/> object that specifies parameters of requested connection.</param>
+        /// <param name="callerCepId">An object that represents the local CepId. </param>
+        /// <param name="calleeCepId">An object that will be filled by the remote process with its CepId.</param>
+        /// <param name="outflow">QoS specification for outgoing flow.</param>
+        /// <param name="inflow">QoS specification for incoming flow.</param>
+        /// <returns>A result of the operation as a <see cref="PortError"/> value.</returns>
+        protected abstract PortError wsaConnect(ConnectionEndpoint cep, ConnectionInformation ci, CepIdType callerCepId, out CepIdType calleeCepId, QosParameters outflow, QosParameters inflow);
+        /// <summary>
+        /// This method creates a new <see cref="ConnectionEndpoint"/>. Override this method to
+        /// provide the object of the required type.
+        /// </summary>
+        /// <param name="af">Address family of the <see cref="ConnectionEndpoint"/>.</param>
+        /// <param name="ct">Connection type of the <see cref="ConnectionEndpoint"/>.</param>
+        /// <returns>
+        /// The method may return null if either <see cref="Sockets.AddressFamily"/> nor <see
+        /// cref="ConnectionType"/> is not supported.
+        /// </returns>
         protected abstract ConnectionEndpoint wsaConnection(Sockets.AddressFamily af, ConnectionType ct);
 
-        protected abstract PortError wsaGetIoctl(ConnectionEndpoint cep, WsaControlCode code, out object value);
+        /// <summary>
+        /// Called before the port bound to the specified <see cref="ConnectionEndpoint"/> is closed. 
+        /// </summary>
+        /// <param name="cep"><see cref="ConnectionEndpoint"/> which should be closed.</param>
+        /// <returns>A result of the operation as a <see cref="PortError"/> value.</returns>
+        protected abstract PortError wsaClose(ConnectionEndpoint cep);
+
+        /// <summary>
+        /// Gets 
+        /// </summary>
+        /// <param name="cep"></param>
+        /// <param name="code"></param>
+        /// <param name="param"></param>
+        /// <param name="value"></param>
+        /// <returns></returns>
+        protected abstract PortError wsaIoctl(ConnectionEndpoint cep, WsaControlCode code, object inValue, out object outValue);
 
         protected abstract PortError wsaRecv(ConnectionEndpoint cep, byte[] buffer, int offset, int size, out int bytesReceived, PortFlags socketFlags);
 
         protected abstract PortError wsaSend(ConnectionEndpoint cep, byte[] buffer, int offset, int size);
 
         protected abstract PortError wsaSendDisconnect(ConnectionEndpoint cep);
-
-        protected abstract PortError wsaSetIoctl(ConnectionEndpoint cep, WsaControlCode code, object value);
 
         protected abstract PortError wsaStartup(ushort versionRequested, out object data);
 

@@ -71,14 +71,14 @@ private static Task acceptFlowHandler(IRinaIpc context, FlowInformation flowInfo
 
 # Naming and addressing
 
-## URI
+## RINA URI
 Within a DIF it is possible to use URI style addressing:
 ```
 rina://DIF-NAME/IPC-NAME/RIB-PATH
 ```
 Some well-known RIB-paths are:
 
-| Path | Meaning                                                        |
+| Path | Meaning  |
 |-----------------------------------------------------------------------|
 | flows/FLOW-ID/data | provides flow data access            |
 | flows/FLOW-ID/control | provides control information for flow |
@@ -92,9 +92,9 @@ Request a new flow:
 ```CSharp
 var ci = new ConnectionInformation()
        {               
-           SourceAddress = "rina://ethernet-shim-dif/00155d08f6e3e",
+           SourceAddress = "rina://ethershim/00155d08f6e3e",
            SourceApplication = "SensorReader",
-           DestinationAddress = "rina://ethernet-shim-dif/00155d0c6404",
+           DestinationAddress = "rina://ethershim/00155d0c6404",
            DestinationApplication = "TempSensor"
        };
 
@@ -105,7 +105,7 @@ var openReq = new IpcOpenRequest()
           ObjectValue = ci
       };
 
-var port = ipc.AllocateFlow("rina://ethernet-shim-dif/00155d0c6404");
+var port = ipc.AllocateFlow("rina://ethershim/00155d0c6404");
 
 ipc.Send(port, openReq)
 ```
@@ -114,16 +114,35 @@ ipc.Send(port, openReq)
 Identifies a web server represented by iis application with pid 4759
 that runs on Dublin host.
 ```
-rina://wcf-shim-dif/Dublin/apps/iis.exe/4759
+rina://wcfshim/Dublin/apps/iis.exe/4759
 ```
 Note that application NAME can
 be an alias. So, it is possible to define names for well-known services and maps
 them to specific providers.
 ```
-rina://wcf-shim-dif/Dublin/apps/web-server
+rina://wcfshim/Dublin/apps/web-server
 ```
 This is an alias that maps to iis application.
-### Disconnect
+
+## Flow Lifetime
+
+### Flow Connecting
+Usually, clients initializes connection to server application:
+```CSharp
+var port = ipc.Connect(flowInformation);
+if (port != null)
+{
+...
+}
+```
+When client calls `Connect` the following procedure is executed:
+* Client calls `Connect`, which generates `ConnectRequest` message sent to server.
+* Server receives `ConnectRequest`, validates this request and finds an application to serve to this request
+* If application can server the request the server sends `ConnectResponse` with result `ConnectResult.Accept`; otherwise result is `ConnectResult.Reject`.
+* Client receives `ConnectResponse` and depending on the `ConnectResult` value,  it initializes local connection endpoint and creates port or return null port.
+
+
+### Flow Disconnecting
 When client wants to close the connection gracefully it can call Disconnect function:
 ```CSharp
 ipc.Disconnect(port, timeout);
@@ -142,6 +161,9 @@ When client initiates disconnection, the order of actions is as follows:
 * Client closes the connection upon receiving `DisconnectResponse` message.
 
 Other option is to abort the connection causing that pending data will be discarded:
+```CSharp
+ipc.Abort(port);
+```
 * Client calls `Abort` that causes `DisconnectRequest` message of type Abort will be sent
 * When Server receives `DisconnectRequest` message of type `Abort`, it should discard all messages
 and may optionally send `DisconnectRespose` message

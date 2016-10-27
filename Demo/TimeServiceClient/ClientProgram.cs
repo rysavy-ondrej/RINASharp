@@ -108,10 +108,12 @@ namespace TimeServiceClient
             Enum.TryParse<IpcProcessType>(difName, true, out difType);
             var ipcAddress = serverUri.GetIpcAddress();
             var appName = serverUri.GetAppName();
-            Trace.WriteLine($"Connecting to {serverUri.AbsoluteUri}", "INFO");
-            Trace.WriteLine($"SHIM:        {difName} ({difType})", "INFO");
-            Trace.WriteLine($"IPC-ADDRESS: {ipcAddress}", "INFO");
-            Trace.WriteLine($"APP-NAME:    {appName}", "INFO");
+            Trace.TraceInformation("---------------------------------------");
+            Trace.TraceInformation($"RINA-URL:    {serverUri.AbsoluteUri}");
+            Trace.TraceInformation($"SHIM:        {difName} ({difType})");
+            Trace.TraceInformation($"IPC-ADDRESS: {ipcAddress}");
+            Trace.TraceInformation($"APP-NAME:    {appName}");
+            Trace.TraceInformation("---------------------------------------");
 
 
             using (var host = new IpcHost())

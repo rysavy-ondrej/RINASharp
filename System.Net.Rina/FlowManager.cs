@@ -27,15 +27,14 @@ using System.Collections.Generic;
 namespace System.Net.Rina
 {
     /// <summary>
-    /// Flow manager represents a flow allocator in RINA architecture. It creates and destroys 
-    /// flow instances.
+    /// Flow manager represents a flow allocator in RINA architecture. It creates and destroys flow instances.
     /// </summary>
     public class FlowManager
     {
         /// <summary>
         /// Maps flow ids to flows.
         /// </summary>
-        Dictionary<ulong, FlowInstance> _flows = new Dictionary<ulong, FlowInstance>();
+        Dictionary<ulong, FlowInstance> m_flows = new Dictionary<ulong, FlowInstance>();
 
         /// <summary>
         /// Creates a new instance of flow manager.
@@ -47,11 +46,11 @@ namespace System.Net.Rina
         ulong _lastFlowId = 0;
 		public FlowInstance AddFlow (FlowInformation flowInformation)
 		{
-            lock(this._flows)
+            lock(this.m_flows)
             {
                 _lastFlowId++;
                 var flowInstance = new FlowInstance(flowInformation, _lastFlowId);
-                this._flows.Add(flowInstance.Id, flowInstance);
+                this.m_flows.Add(flowInstance.Id, flowInstance);
 
                 return flowInstance;
             }
@@ -63,9 +62,9 @@ namespace System.Net.Rina
         /// <param name="flowId">An identification of the FlowInstance object.</param>
         public void DeleteFlow(ulong flowId)
         {
-            lock(this._flows)
+            lock(this.m_flows)
             {
-                _flows.Remove(flowId);
+                m_flows.Remove(flowId);
             }
         }
 
@@ -77,9 +76,9 @@ namespace System.Net.Rina
         /// <exception cref="KeyNotFoundException">If flow with the given id does not exist.</exception>
         public FlowInstance GetFlowInstance(ulong fid)
         {   
-            lock (this._flows)
+            lock (this.m_flows)
             {
-                return this._flows[fid];
+                return this.m_flows[fid];
             }
         }
 
@@ -90,9 +89,9 @@ namespace System.Net.Rina
         /// <returns>An array of flow instances that matches specified criteria.</returns>
         FlowInstance[] SelectFlows(Func<FlowInstance, bool> selector)
 		{
-            lock (this._flows)
+            lock (this.m_flows)
             {
-                var flows = _flows.Values.Where(selector);
+                var flows = m_flows.Values.Where(selector);
                 return flows.ToArray();
             }
 		}

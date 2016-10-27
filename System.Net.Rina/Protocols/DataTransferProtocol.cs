@@ -37,6 +37,7 @@ namespace System.Net.Rina
 		public byte PduType { get; set;} 
 		public byte Flags { get; set;} 
 		public uint SequenceNumber { get; set;} 
+
 		private byte[] payload;
 		public int Length { get { return this.payload.Length + 15; } }
 

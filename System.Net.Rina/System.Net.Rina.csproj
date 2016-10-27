@@ -28,6 +28,10 @@
     <ConsolePause>false</ConsolePause>
   </PropertyGroup>
   <ItemGroup>
+    <Reference Include="Kleinware.LikeType, Version=3.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>..\packages\Kleinware.LikeType.3.0.0.0\lib\net20\Kleinware.LikeType.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
     <Reference Include="Newtonsoft.Json, Version=9.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
       <HintPath>..\packages\Newtonsoft.Json.9.0.2-beta1\lib\net45\Newtonsoft.Json.dll</HintPath>
       <Private>True</Private>
@@ -48,12 +52,16 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="ConnectionEndPoint.cs" />
+    <Compile Include="ConnectionInformation.cs" />
+    <Compile Include="ConnectionType.cs" />
     <Compile Include="DataUnits\PduInternal.cs" />
     <Compile Include="DataUnits\SduInternal.cs" />
     <Compile Include="Exceptions\PortException.cs" />
     <Compile Include="Exceptions\PortError.cs" />
     <Compile Include="Helpers\UniqueRandom.cs" />
     <Compile Include="Helpers\IpcChannelStream.cs" />
+    <Compile Include="Internals\ReceiveBufferBlock.cs" />
     <Compile Include="Internals\ByteArraySegment.cs" />
     <Compile Include="Internals\FifoStream.cs" />
     <Compile Include="Internals\MultiKeyDictionary.cs" />
@@ -62,10 +70,14 @@
     <Compile Include="IpcProcessFactory.cs" />
     <None Include="PortAsyncEventArgs.cs" />
     <Compile Include="Protocols\CDAPMessage.cs" />
-    <Compile Include="Shims\PipeEndPoint.cs" />
-    <Compile Include="Shims\PipeIpcProcess.cs" />
-    <Compile Include="Messages\IpcMessages.cs" />
-    <Compile Include="Shims\PipeMessage.cs" />
+    <Compile Include="ConnectionState.cs" />
+    <Compile Include="Shims\NamedPipes\IPipeCallback.cs" />
+    <Compile Include="Shims\NamedPipes\PipeClient.cs" />
+    <Compile Include="Shims\NamedPipes\PipeEndPoint.cs" />
+    <Compile Include="Shims\NamedPipes\PipeIpcProcess.cs" />
+    <Compile Include="Shims\NamedPipes\PipePool.cs" />
+    <Compile Include="Shims\NamedPipes\PipeServer.cs" />
+    <Compile Include="Shims\NamedPipes\PipeMessage.cs" />
     <Compile Include="Transport\DataTransferControlService.cs" />
     <Compile Include="Naming\StaticNameService.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
@@ -100,10 +112,14 @@
     <Compile Include="Transport\DtStateVector.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.targets" />
-  <ItemGroup />
+  <ItemGroup>
+    <Folder Include="Messages\" />
+    <Folder Include="Shims\Ethernet\" />
+    <Folder Include="Shims\InterNetworkV6\" />
+    <Folder Include="Shims\InterNetwork\" />
+  </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
-    <None Include="RinaCore.cd" />
-    <Compile Include="Shims\WcfIpcProcess.cs" />
+    <Compile Include="Shims\Wcf\WcfIpcProcess.cs" />
   </ItemGroup>
 </Project>

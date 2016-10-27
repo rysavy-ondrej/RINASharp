@@ -11,3 +11,4 @@ C:\Users\Ondrej\Documents\GitHub\RINASharp\System.Net.Rina\bin\Debug\Newtonsoft.
 C:\Users\Ondrej\Documents\GitHub\RINASharp\System.Net.Rina\obj\Debug\System.Net.Rina.csprojResolveAssemblyReference.cache
 C:\Users\Ondrej\Documents\GitHub\RINASharp\System.Net.Rina\bin\Debug\PacketDotNet.dll
 C:\Users\Ondrej\Documents\GitHub\RINASharp\System.Net.Rina\bin\Debug\PacketDotNet.xml
+C:\Users\Ondrej\Documents\GitHub\RINASharp\System.Net.Rina\bin\Debug\Kleinware.LikeType.dll
