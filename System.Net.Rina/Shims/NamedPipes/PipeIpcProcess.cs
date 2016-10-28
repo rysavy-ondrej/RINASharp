@@ -91,10 +91,6 @@ namespace System.Net.Rina.Shims
                     case PipeMessageType.DisconnectRequest:
                         onAsyncMessage_DisconnectRequest(pipeStream, msg as PipeDisconnectRequest);
                         break;
-
-                    case PipeMessageType.DisconnectResponse:
-                        onAsyncMessage_DisconnectResponse(pipeStream, msg as PipeDisconnectRequest);
-                        break;
                     default:
                         break;
                 }
@@ -105,27 +101,22 @@ namespace System.Net.Rina.Shims
             }
         }
 
-        private void onAsyncMessage_DisconnectResponse(PipeStream pipeStream, PipeDisconnectRequest message)
-        {
-            var cepId = message.DestinationCepId;
-            ConnectionEndpoint cep;
-            if (m_connectionsOpen.TryGetValue(cepId, out cep))
-            {
-                OnDisconnectResponse(cep);
-            }
-            else
-            {
-                Trace.TraceError($"{nameof(onAsyncMessage_DisconnectRequest)}: specified CepId={cepId} not found.");
-            }
-        }
-
         private void onAsyncMessage_DisconnectRequest(PipeStream pipeStream, PipeDisconnectRequest message)
         {
             var cepId = message.DestinationCepId;
             ConnectionEndpoint cep;
             if (m_connectionsOpen.TryGetValue(cepId, out cep))
             {
-                OnDisconnectRequest(cep, message.Flags == DisconnectFlags.Abort);
+                OnDisconnectRequest(cep, message.Flags == DisconnectFlags.Abort).Wait();
+
+                var msg = new PipeDisconnectResponse()
+                {
+                    SourceAddress = message.DestinationAddress,
+                    DestinationAddress = message.SourceAddress,
+                    DestinationCepId = cep.RemoteCepId,
+                    Flags = DisconnectFlags.Close
+                };
+                PipeMessageEncoder.WriteMessage(msg, pipeStream);
             }
             else
             {
@@ -312,8 +303,11 @@ namespace System.Net.Rina.Shims
             try
             {
                 var msgBytes = PipeMessageEncoder.WriteMessage(msg);
-                pcep.SendQueue.Post(new ArraySegment<byte>(msgBytes));
-                return PortError.Success;
+                var sent = pcep.SendQueue.Post(new ArraySegment<byte>(msgBytes));
+                if (sent)
+                    return PortError.Success;
+                else
+                    return PortError.NoBufferSpaceAvailable;
             }
             catch (IOException e)
             {
@@ -331,20 +325,27 @@ namespace System.Net.Rina.Shims
                 return PortError.Fault;
             }
         }
-
-        protected override PortError wsaSendDisconnect(ConnectionEndpoint cep)
+        protected override Task<PortError> wsaDisconnectAsync(ConnectionEndpoint cep, bool abort, CancellationToken ct)
         {
             var pcep = cep as PipeConnectionEndpoint;
-            Debug.Assert(cep != null);
+            Debug.Assert(pcep != null);
             var msg = new PipeDisconnectRequest()
             {
                 SourceAddress = cep.Information.SourceAddress,
                 DestinationAddress = cep.Information.DestinationAddress,
                 DestinationCepId = cep.RemoteCepId,
-                Flags = DisconnectFlags.Gracefull
+                Flags = abort ? DisconnectFlags.Abort : DisconnectFlags.Gracefull
             };
             PipeMessageEncoder.WriteMessage(msg, pcep.PipeClient.Stream);
-            return PortError.Success;
+
+            if (!abort)
+            {
+                return Task<PortError>.Run(() => {
+                    var response = PipeMessageEncoder.ReadMessage(pcep.PipeClient.Stream) as PipeDisconnectResponse;
+                    return response.Flags == DisconnectFlags.Close ? PortError.Success : PortError.ConnectionAborted;
+                });                
+            }
+            return Task.FromResult(PortError.ConnectionAborted);
         }
 
         /// <summary>
@@ -556,12 +557,28 @@ namespace System.Net.Rina.Shims
 
             public ITargetBlock<ArraySegment<byte>> SendQueueManager;
 
+
+
+            Task sendMessage(ArraySegment<byte> messageValue)
+            {
+                if (PipeClient?.IsConnected == true)
+                {
+                    return PipeClient.Stream.WriteAsync(messageValue.Array, messageValue.Offset, messageValue.Count);
+                }
+                else
+                    return Task.FromResult(false);
+            }
+
             public PipeConnectionEndpoint()
             {
                 ReceiveBufferSize = 4096 * 4;
                 ReceiveTimeout = TimeSpan.FromSeconds(30);
-                SendQueueManager = new DirectSender(this);
-                SendQueue.LinkTo(SendQueueManager);
+                SendQueueManager = new ActionBlock<ArraySegment<byte>>(sendMessage);
+                SendQueueManager.Completion.ContinueWith((t) => 
+                {
+                    SendCompletedEvent.Set();
+                });
+                SendQueue.LinkTo(SendQueueManager, new DataflowLinkOptions() { PropagateCompletion = true });
             }
             /// <summary>
             /// This is receive queue. New data are enqueued in this queue by the IPC process.
@@ -586,44 +603,8 @@ namespace System.Net.Rina.Shims
                 switch(newValue)
                 {
                     case ConnectionState.Closing: SendQueue.Complete(); break;
-                    case ConnectionState.Closed: SendQueueManager.Complete(); break;
+                    case ConnectionState.Closed: SendQueueManager.Fault(new PortException(PortError.ConnectionAborted)); break;
                 }
-            }
-        }
-
-        internal class DirectSender : ITargetBlock<ArraySegment<byte>>
-        {
-            PipeConnectionEndpoint m_cep;
-            internal DirectSender(PipeConnectionEndpoint cep)
-            {
-                m_cep = cep;
-            }
-            public Task Completion
-            {
-                get
-                {
-                    throw new NotImplementedException();
-                }
-            }
-
-            public void Complete()
-            {
-                m_cep.SendCompletition.Set();
-            }
-
-            public void Fault(Exception exception)
-            {
-                throw new NotImplementedException();
-            }
-
-            public DataflowMessageStatus OfferMessage(DataflowMessageHeader messageHeader, ArraySegment<byte> messageValue, ISourceBlock<ArraySegment<byte>> source, bool consumeToAccept)
-            {
-                if (m_cep.PipeClient?.IsConnected == true)
-                {
-                    m_cep.PipeClient.Stream.Write(messageValue.Array, messageValue.Offset, messageValue.Count);
-                    return DataflowMessageStatus.Accepted;
-                }
-                return DataflowMessageStatus.Declined;
             }
         }
     }

@@ -334,13 +334,14 @@ namespace System.Net.Rina.Shims.NamedPipes
     internal static class PipeMessageEncoder
     {
         internal static PipeMessage ReadMessage(byte[] data, int offset, int bytes)
-        {
-            Trace.TraceInformation($"readMessageFromPipe: Message {bytes}B: {BitConverter.ToString(data, 0, bytes)}");
+        {            
             using (var ms = new MemoryStream(data, 0, bytes))
             {
                 try
                 {
-                    return PipeMessage.Deserialize(ms);
+                    var msg = PipeMessage.Deserialize(ms);
+                    Trace.TraceInformation($"PipeMessageEncoder.ReadMessage: Message {msg.MessageType}, len = {bytes}B: {BitConverter.ToString(data, offset, bytes)}");
+                    return msg;
                 }
                 catch (Exception e)
                 {
@@ -363,11 +364,12 @@ namespace System.Net.Rina.Shims.NamedPipes
                 }
                 while (!pipeStream.IsMessageComplete);
                 var count = (int)ms.Position;
-                ms.Position = 0;
-                Trace.TraceInformation($"readMessageFromPipe: Message {count}B: {BitConverter.ToString(ms.GetBuffer(), 0, count)}");
+                ms.Position = 0;                
                 try
                 {
-                    return PipeMessage.Deserialize(ms);
+                    var msg = PipeMessage.Deserialize(ms);
+                    Trace.TraceInformation($"PipeMessageEncoder.ReadMessage: Message {msg.MessageType}, len = {count}B: {BitConverter.ToString(ms.GetBuffer(), 0, count)}");
+                    return msg;
                 }
                 catch (Exception e)
                 {
@@ -393,7 +395,7 @@ namespace System.Net.Rina.Shims.NamedPipes
                 message.Serialize(ms);
                 var buf = ms.GetBuffer();
                 var count = (int)ms.Position;
-                Trace.TraceInformation($"writeMessageToPipe: Message {count}B: {BitConverter.ToString(buf, 0, count)}");
+                Trace.TraceInformation($"PipeMessageEncoder.WriteMessage: Message {message.MessageType}, len={count}B: {BitConverter.ToString(buf, 0, count)}");
                 pipeStream.Write(buf, 0, count);
                 return count;
             }

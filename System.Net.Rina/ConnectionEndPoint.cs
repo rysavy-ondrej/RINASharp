@@ -28,12 +28,6 @@ namespace System.Net.Rina
     public abstract class ConnectionEndpoint
     {
         /// <summary>
-        /// Indicates that DisconnectResponse was received for this connection.
-        /// </summary>
-        internal ManualResetEventSlim DisconnectResponseReceived = new ManualResetEventSlim(false);
-        internal ManualResetEventSlim SendCompletition = new ManualResetEventSlim(false);
-
-        /// <summary>
         /// Provides information about the connection associated with the current ConnectionEndpoint.
         /// </summary>
         public ConnectionInformation Information;
@@ -53,42 +47,24 @@ namespace System.Net.Rina
         /// the connection is not bound. 
         /// </summary>
         internal Port Port;
-        protected ConnectionState m_state = ConnectionState.Detached;
-        public virtual ConnectionState State
-        {
-            get
-            {
-                return m_state;
-            }
-            internal set
-            {
-                if (m_state != value)
-                {
-                    OnStateChanged(m_state, value);
-                    m_state = value;
-                }
-            }
-        }
-        
-        /// <summary>
-        /// Called when state is to be changed from the <paramref name="oldValue"/> to <paramref name="newValue"/>.
-        /// </summary>
-        /// <param name="oldValue"></param>
-        /// <param name="newValue"></param>
-        protected virtual void OnStateChanged(ConnectionState oldValue, ConnectionState newValue)
-        {  }
 
+        /// <summary>
+        /// Indicates that DisconnectResponse was received for this connection.
+        /// </summary>
+        internal ManualResetEventSlim SendCompletedEvent = new ManualResetEventSlim(false);
+        /// <summary>
+        /// Stores the state of the current <see cref="ConnectionEndpoint"/>.
+        /// </summary>
+        protected ConnectionState m_state = ConnectionState.Detached;
+        /// <summary>
+        /// Creates a new instance of <see cref="ConnectionEndpoint"/> initialized to default value.
+        /// </summary>
         public ConnectionEndpoint()
         {
             ReceiveBufferSize = 4096 * 4;
             ReceiveTimeout = TimeSpan.FromSeconds(30);
             Blocking = true;
         }
-
-        /// <summary>
-        /// Provides information about available space in the receive buffer.
-        /// </summary>
-        public abstract int ReceiveBufferSpace { get; }
 
         /// <summary>
         /// Represents an address family used with this connection end point.
@@ -118,10 +94,30 @@ namespace System.Net.Rina
         public int ReceiveBufferSize { set; get; }
 
         /// <summary>
+        /// Provides information about available space in the receive buffer.
+        /// </summary>
+        public abstract int ReceiveBufferSpace { get; }
+
+        /// <summary>
         /// An amount of time for which the IPC process will wait until the completion of receive operation.
         /// </summary>
         public TimeSpan ReceiveTimeout { set; get; }
 
+        public virtual ConnectionState State
+        {
+            get
+            {
+                return m_state;
+            }
+            internal set
+            {
+                if (m_state != value)
+                {
+                    OnStateChanged(m_state, value);
+                    m_state = value;
+                }
+            }
+        }
 
         /// <summary>
         /// Returns a <see cref="String"/> describing the current object.
@@ -131,5 +127,13 @@ namespace System.Net.Rina
         {
             return $"{Information.SourceApplication}@{Information.SourceAddress}:{LocalCepId} --> {Information.DestinationApplication}@{Information.DestinationAddress}:{RemoteCepId} [{Connected}]";
         }
+
+        /// <summary>
+        /// Called when state is to be changed from the <paramref name="oldValue"/> to <paramref name="newValue"/>.
+        /// </summary>
+        /// <param name="oldValue"></param>
+        /// <param name="newValue"></param>
+        protected virtual void OnStateChanged(ConnectionState oldValue, ConnectionState newValue)
+        {  }
     }
 }

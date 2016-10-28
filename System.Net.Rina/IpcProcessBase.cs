@@ -219,14 +219,12 @@ namespace System.Net.Rina
         {
             ConnectionEndpoint cep;
             if (m_connectionsOpen.TryGetValue(port.CepId, out cep))
-            {
-                PortError errorCode = wsaSendDisconnect(cep);
-                if (errorCode != PortError.Success) throw new PortException(errorCode);
-
+            {                                
                 // wait for DisconnectResponse:
                 try
                 {
-                    cep.DisconnectResponseReceived.Wait(timeout);
+                    CancellationToken ct;
+                    wsaDisconnectAsync(cep, false, ct).Wait(timeout);
                     return true;
                 }
                 catch(TimeoutException)
@@ -260,7 +258,7 @@ namespace System.Net.Rina
                 m_connectionsOpen.Remove(cep.Id);                
                 m_connectionsClosed.Add(cep.Id, cep);
                 cep.State = ConnectionState.Closed;
-                return Task<bool>.Run(() => true);
+                return Task<bool>.FromResult(true);
             }
             else
             {
@@ -269,19 +267,11 @@ namespace System.Net.Rina
                 cep.State = ConnectionState.Closing;
                 return Task<bool>.Run(() =>
                 {
-                    cep.SendCompletition.Wait();
+                    cep.SendCompletedEvent.Wait();
                     return true;
                 });
             }
         }
-        protected void OnDisconnectResponse(ConnectionEndpoint cep)
-        {
-            m_connectionsOpen.Remove(cep.Id);
-            m_connectionsClosed.Add(cep.Id, cep);
-            cep.State = ConnectionState.Closed;
-            cep.DisconnectResponseReceived.Set();                        
-        }
-
 
         public PortInformationOptions GetPortInformation(Port port)
         {
@@ -425,7 +415,7 @@ namespace System.Net.Rina
 
         protected abstract PortError wsaSend(ConnectionEndpoint cep, byte[] buffer, int offset, int size);
 
-        protected abstract PortError wsaSendDisconnect(ConnectionEndpoint cep);
+        protected abstract Task<PortError> wsaDisconnectAsync(ConnectionEndpoint cep, bool abort, CancellationToken ct);
 
         protected abstract PortError wsaStartup(ushort versionRequested, out object data);
 
