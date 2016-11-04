@@ -16,6 +16,13 @@ namespace System.Net.Rina.Shims
     /// <summary>
     /// This is implementation of IpcProcess for ShimDif that employs NamedPipes for communication.
     /// </summary>
+    /// <remarks>
+    /// <see cref="PipeIpcProcess"/> implements IPC using NamedPipes. 
+    /// To simplify the implementation, for each connection two pipes are necessary. Each pipe is only one directional.
+    /// Handling data of incoming pipe is done by implementing callback interface <see cref="IPipeCallback"/>. 
+    /// <see cref="IPipeCallback.OnAsyncMessage(PipeStream, byte[], int, object)"/> method handles properly both data and control messages.
+    /// Outgoing pipe is assigned to each connection and is directly used to send data.
+    /// </remarks>
     [ShimIpc("NamedPipe")]
     public class PipeIpcProcess : IpcProcessBase, IPipeCallback
     {
@@ -91,6 +98,10 @@ namespace System.Net.Rina.Shims
                     case PipeMessageType.DisconnectRequest:
                         onAsyncMessage_DisconnectRequest(pipeStream, msg as PipeDisconnectRequest);
                         break;
+                    case PipeMessageType.ConnectResponse:
+                    case PipeMessageType.DisconnectResponse:
+                        onAsyncMessage_ControlMessage(msg);
+                        break;
                     default:
                         break;
                 }
@@ -101,22 +112,23 @@ namespace System.Net.Rina.Shims
             }
         }
 
+        private void onAsyncMessage_ControlMessage(PipeMessage message)
+        {
+            var cepId = message.DestinationCepId;
+            ConnectionEndpoint cep;
+            if (m_connectionsOpen.TryGetValue(cepId, out cep))
+            {
+                var pcep = (cep as PipeConnectionEndpoint);
+                pcep?.ControlMessages.Post(message);
+            }
+        }
         private void onAsyncMessage_DisconnectRequest(PipeStream pipeStream, PipeDisconnectRequest message)
         {
             var cepId = message.DestinationCepId;
             ConnectionEndpoint cep;
             if (m_connectionsOpen.TryGetValue(cepId, out cep))
             {
-                OnDisconnectRequest(cep, message.Flags == DisconnectFlags.Abort).Wait();
-
-                var msg = new PipeDisconnectResponse()
-                {
-                    SourceAddress = message.DestinationAddress,
-                    DestinationAddress = message.SourceAddress,
-                    DestinationCepId = cep.RemoteCepId,
-                    Flags = DisconnectFlags.Close
-                };
-                PipeMessageEncoder.WriteMessage(msg, pipeStream);
+                wsaOnDisconnectRequest(cep, message.Flags == DisconnectFlags.Abort);
             }
             else
             {
@@ -325,7 +337,37 @@ namespace System.Net.Rina.Shims
                 return PortError.Fault;
             }
         }
-        protected override Task<PortError> wsaDisconnectAsync(ConnectionEndpoint cep, bool abort, CancellationToken ct)
+
+        protected override PortError wsaOnDisconnectRequest(ConnectionEndpoint cep, bool abortAnnounced)
+        {
+            var result = base.wsaOnDisconnectRequest(cep, abortAnnounced);
+
+            if (result == PortError.Success)
+            {
+                sendDisconnectResponse(cep);
+            }
+            if (result == PortError.InProgress)
+            {
+                cep.UpflowClosedEvent.Wait();
+                sendDisconnectResponse(cep);
+            }
+            return PortError.Success;
+        }
+
+        private static void sendDisconnectResponse(ConnectionEndpoint cep)
+        {
+            var pcep = cep as PipeConnectionEndpoint;
+            var msg = new PipeDisconnectResponse()
+            {
+                SourceAddress = cep.Information.SourceAddress,
+                DestinationAddress = cep.Information.DestinationAddress,
+                DestinationCepId = cep.RemoteCepId,
+                Flags = DisconnectFlags.Close
+            };
+            PipeMessageEncoder.WriteMessage(msg, pcep.PipeClient.Stream);
+        }
+
+        protected override async Task<PortError> wsaDisconnectAsync(ConnectionEndpoint cep, bool abort, CancellationToken ct)
         {
             var pcep = cep as PipeConnectionEndpoint;
             Debug.Assert(pcep != null);
@@ -337,15 +379,18 @@ namespace System.Net.Rina.Shims
                 Flags = abort ? DisconnectFlags.Abort : DisconnectFlags.Gracefull
             };
             PipeMessageEncoder.WriteMessage(msg, pcep.PipeClient.Stream);
-
             if (!abort)
             {
-                return Task<PortError>.Run(() => {
-                    var response = PipeMessageEncoder.ReadMessage(pcep.PipeClient.Stream) as PipeDisconnectResponse;
-                    return response.Flags == DisconnectFlags.Close ? PortError.Success : PortError.ConnectionAborted;
-                });                
+                PipeMessage response;
+                do
+                {
+                    ct.ThrowIfCancellationRequested();
+                    response = await pcep.ControlMessages.ReceiveAsync(ct);
+                }
+                while (response.MessageType != PipeMessageType.DisconnectResponse);
+                return (response as PipeDisconnectResponse)?.Flags == DisconnectFlags.Close ? PortError.Success : PortError.ConnectionAborted;                
             }
-            return Task.FromResult(PortError.ConnectionAborted);
+            return PortError.ConnectionAborted;
         }
 
         /// <summary>
@@ -553,13 +598,18 @@ namespace System.Net.Rina.Shims
         /// </summary>
         internal class PipeConnectionEndpoint : ConnectionEndpoint
         {
-            public PipeClient PipeClient;
+            /// <summary>
+            /// Stores associated <see cref="PipeClient"/> used to send messages to the remote CEP.
+            /// </summary>
+            internal PipeClient PipeClient;
 
-            public ITargetBlock<ArraySegment<byte>> SendQueueManager;
+            /// <summary>
+            /// Keeps the record of incoming control messages waiting for processing by internal
+            /// logic of the IPC connection manager.
+            /// </summary>
+            internal BufferBlock<PipeMessage> ControlMessages = new BufferBlock<PipeMessage>();
 
-
-
-            Task sendMessage(ArraySegment<byte> messageValue)
+            Task sendNextMessage(ArraySegment<byte> messageValue)
             {
                 if (PipeClient?.IsConnected == true)
                 {
@@ -569,42 +619,28 @@ namespace System.Net.Rina.Shims
                     return Task.FromResult(false);
             }
 
-            public PipeConnectionEndpoint()
+            /// <summary>
+            /// Represents the Send manager. This object reads data from the Send Queue and 
+            /// send them to the outgoing pipe.
+            /// </summary>
+            ActionBlock<ArraySegment<byte>> m_sendQueueManager;
+
+            internal PipeConnectionEndpoint() : base()
             {
                 ReceiveBufferSize = 4096 * 4;
                 ReceiveTimeout = TimeSpan.FromSeconds(30);
-                SendQueueManager = new ActionBlock<ArraySegment<byte>>(sendMessage);
-                SendQueueManager.Completion.ContinueWith((t) => 
+                m_sendQueueManager = new ActionBlock<ArraySegment<byte>>(sendNextMessage);
+                m_sendQueueManager.Completion.ContinueWith((t) => 
                 {
-                    SendCompletedEvent.Set();
+                    UpflowClosedEvent.Set();
                 });
-                SendQueue.LinkTo(SendQueueManager, new DataflowLinkOptions() { PropagateCompletion = true });
-            }
-            /// <summary>
-            /// This is receive queue. New data are enqueued in this queue by the IPC process.
-            /// </summary>
-            public readonly ReceiveBufferBlock<byte> ReceiveQueue = new ReceiveBufferBlock<byte>();
-
-            /// <summary>
-            /// This is send queue that stores data before it is sent by the IPC process. 
-            /// </summary>
-            public readonly BufferBlock<ArraySegment<byte>> SendQueue = new BufferBlock<ArraySegment<byte>>();
-
-            public override int ReceiveBufferSpace
-            {
-                get
-                {
-                    return ReceiveBufferSize - ReceiveQueue.ItemsAvailable;
-                }
+                SendQueue.LinkTo(m_sendQueueManager, new DataflowLinkOptions() { PropagateCompletion = true });
             }
 
-            protected override void OnStateChanged(ConnectionState oldValue, ConnectionState newValue)
+            protected override void OnAbort()
             {
-                switch(newValue)
-                {
-                    case ConnectionState.Closing: SendQueue.Complete(); break;
-                    case ConnectionState.Closed: SendQueueManager.Fault(new PortException(PortError.ConnectionAborted)); break;
-                }
+                base.OnAbort();
+                ((IDataflowBlock)m_sendQueueManager).Fault(new PortException(PortError.ConnectionAborted));
             }
         }
     }

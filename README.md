@@ -11,7 +11,18 @@ hint on how RINA communication may look likes.
 
 ## TimeService Demo
 Server side consists of implementation of a server that answers to request of the clients.
+### Running demo
+The demo consists of a client and a server.
+To run the server type the following command:
+```
+tss -shimdif pipeshim
+```
+To run the client type the following command:
+```
+tsc rina://pipeshim/Dublin/app/TimeServer
+```
 
+### Implementation
 The main method just creates IpcHost instance that manages all IpcProcess instances
 in the application. As the only DIF, the ShimDIF is considered and the process
 shimIpcProcess ius created in this DIF. Application is registered in the
@@ -124,9 +135,10 @@ rina://wcfshim/Dublin/apps/web-server
 ```
 This is an alias that maps to iis application.
 
-## Flow Lifetime
+## Connection Lifetime
+https://tools.ietf.org/html/rfc787
 
-### Flow Connecting
+### Connection Establishment
 Usually, clients initializes connection to server application:
 ```CSharp
 var port = ipc.Connect(flowInformation);
@@ -142,7 +154,14 @@ When client calls `Connect` the following procedure is executed:
 * Client receives `ConnectResponse` and depending on the `ConnectResult` value,  it initializes local connection endpoint and creates port or return null port.
 
 
-### Flow Disconnecting
+### Data Transfer
+
+### Connection Release
+Connection release is handled in the same fashion as with TCP. When one side
+has no more data to send it can close the connection for sending. Still, the connection be used to receive data until the other side closes the connection.
+It is also possible to abort the connection which means that the other side
+will be informed that no data will be accepted.
+
 When client wants to close the connection gracefully it can call Disconnect function:
 ```CSharp
 ipc.Disconnect(port, timeout);

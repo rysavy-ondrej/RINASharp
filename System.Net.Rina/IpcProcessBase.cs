@@ -150,7 +150,7 @@ namespace System.Net.Rina
             {
                 CepId = cep.LocalCepId
             };
-            cep.Connected = true;
+            cep.State = ConnectionState.Open;
             m_connectionsOpen.Add(cep.LocalCepId, cep);
             m_portsAllocated.Add(cep.Port.Id, cep.Port);
             return cep.Port;
@@ -234,43 +234,6 @@ namespace System.Net.Rina
             }
             else
                 throw new PortException(PortError.InvalidArgument);
-        }
-
-
-        /// <summary>
-        /// Called by the derived class when disconnect request message was received. 
-        /// If disconnect request contains Abort flag then all buffered data 
-        /// in SEND queue will be removed. Otherwise, it is possible to send 
-        /// the remaining content of the buffer. 
-        /// The RECEIVE buffer will be closed for further messages but
-        /// the application may read available bytes. 
-        /// </summary>
-        /// <param name="cep"></param>
-        /// <param name="abortRequested"></param>
-        /// <returns>A <see cref="Task"/> that represents the asynchronous operation and completion of the disconnect request.</returns>
-        protected Task<bool> OnDisconnectRequest(ConnectionEndpoint cep, bool abortRequested = false)
-        {
-            // TODO: What to do? 
-            // i)  Discard the queue content
-            // ii) Let the IPC to process the remaining data            
-            if (abortRequested)
-            {                
-                m_connectionsOpen.Remove(cep.Id);                
-                m_connectionsClosed.Add(cep.Id, cep);
-                cep.State = ConnectionState.Closed;
-                return Task<bool>.FromResult(true);
-            }
-            else
-            {
-                m_connectionsOpen.Remove(cep.Id);                
-                m_connectionsClosing.Add(cep.Id, cep);
-                cep.State = ConnectionState.Closing;
-                return Task<bool>.Run(() =>
-                {
-                    cep.SendCompletedEvent.Wait();
-                    return true;
-                });
-            }
         }
 
         public PortInformationOptions GetPortInformation(Port port)
@@ -414,6 +377,40 @@ namespace System.Net.Rina
         protected abstract PortError wsaRecv(ConnectionEndpoint cep, byte[] buffer, int offset, int size, out int bytesReceived, PortFlags socketFlags);
 
         protected abstract PortError wsaSend(ConnectionEndpoint cep, byte[] buffer, int offset, int size);
+
+        /// <summary>
+        /// Called by the derived class when disconnect request message was received. 
+        /// This method asserts that <see cref="ConnectionEndpoint"/> will transit to 
+        /// the corresponding state.
+        /// </summary>
+        /// <remarks>
+        /// If disconnect request contains Abort flag then all buffered data 
+        /// in SEND queue will be removed. Otherwise, it is possible to send 
+        /// the remaining content of the buffer. 
+        /// The RECEIVE buffer will be closed for further messages but
+        /// the application may read available bytes. 
+        /// </remarks>
+        /// <param name="cep">A local <see cref="ConnectionEndpoint"/> instance.</param>
+        /// <param name="abortAnnounced">It disconnect request is abortive.</param>
+        /// <returns></returns>
+        protected virtual PortError wsaOnDisconnectRequest(ConnectionEndpoint cep, bool abortRequested)
+        {         
+            if (abortRequested)
+            {
+                m_connectionsOpen.Remove(cep.Id);
+                m_connectionsClosed.Add(cep.Id, cep);                
+                cep.State = ConnectionState.Closed;
+                return PortError.Success;
+            }
+            else
+            {
+                m_connectionsOpen.Remove(cep.Id);
+                m_connectionsClosing.Add(cep.Id, cep);
+                cep.State = ConnectionState.Closing;
+                Task.Run(() => { cep.UpflowClosedEvent.Wait(); cep.State = ConnectionState.Closed; });
+                return PortError.InProgress;
+            }
+        }
 
         protected abstract Task<PortError> wsaDisconnectAsync(ConnectionEndpoint cep, bool abort, CancellationToken ct);
 
