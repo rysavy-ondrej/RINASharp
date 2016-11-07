@@ -89,7 +89,7 @@ namespace TimeService
                         case "DateTime.Now": tw.WriteLine($"OK: {DateTime.Now}"); break;
                         default: tw.WriteLine("ERROR: Invalid request!"); break;
                     }
-                    //port.Shutdown(Timeout.InfiniteTimeSpan);
+                    port.Shutdown(Timeout.InfiniteTimeSpan);
                 }
             });
 

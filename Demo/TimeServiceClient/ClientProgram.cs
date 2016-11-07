@@ -133,9 +133,12 @@ namespace TimeServiceClient
                     var cmdBytes = Encoding.ASCII.GetBytes("DateTime.Now\n");
                     port.Send(cmdBytes, 0, cmdBytes.Length);
                     var answerBuffer = port.Receive();
-                    var answerString = Encoding.ASCII.GetString(answerBuffer, 0, answerBuffer.Length);
-                    Console.WriteLine($"Current remote time is: {answerString}");
-                    Trace.TraceInformation("Closing port...");
+                    if (answerBuffer != null)
+                    {
+                        var answerString = Encoding.ASCII.GetString(answerBuffer, 0, answerBuffer.Length);
+                        Console.WriteLine($"Current remote time is: {answerString}");
+                        Trace.TraceInformation("Closing port...");
+                    }
                     port.Shutdown(Timeout.InfiniteTimeSpan);               
                     Trace.WriteLine("Done, Bye.");
                 }

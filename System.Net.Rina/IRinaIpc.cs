@@ -83,6 +83,7 @@ namespace System.Net.Rina
 		/// Disconnects the specifies port from the connection and closes the connection.
 		/// </summary>
 		/// <param name="port">Port descriptor.</param>
+        /// <param name="timeout">Indicates the time how long the caller will wait for completion.</param>
 		bool Disconnect (Port port, TimeSpan timeout);
 
         /// <summary>

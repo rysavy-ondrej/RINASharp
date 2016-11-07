@@ -276,7 +276,10 @@ namespace System.Net.Rina
         /// Reads data from the given <see cref="Port"/>.
         /// </summary>
         /// <param name="port"></param>
-        /// <returns>A byte array containing received data. If operation would block than the result is zero length array. </returns>
+        /// <returns>
+        /// A byte array containing received data. If operation would block than the result is zero length array. 
+        /// If reading beyond the end of the stream,e.g., because port has been disconnected, the result is null.
+        /// </returns>
         public byte[] Receive()
         {
             var buffer = new byte[4096];
