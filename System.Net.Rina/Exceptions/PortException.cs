@@ -9,7 +9,7 @@ namespace System.Net.Rina
 {
 
     [Serializable]
-    public class PortException : Exception
+    public class IpcException : Exception
     {
 
         [NonSerialized]
@@ -17,29 +17,29 @@ namespace System.Net.Rina
         private int m_errorCode;
 
         /// <summary>
-        /// Creates a new instance of the <see cref="System.Net.Rina.PortException"> class with the default error code. 
+        /// Creates a new instance of the <see cref="System.Net.Rina.IpcException"> class with the default error code. 
         /// </summary>
-        public PortException() 
+        public IpcException() 
         {
         }
 
-        internal PortException(EndPoint endPoint) 
+        internal IpcException(EndPoint endPoint) 
         {
             m_EndPoint = endPoint;
         }
 
         /// <summary>
-        /// Creates a new instance of the <see cref="System.Net.Rina.PortException"> class with the default error code. 
+        /// Creates a new instance of the <see cref="System.Net.Rina.IpcException"> class with the default error code. 
         /// </summary>
-        public PortException(int errorCode) 
+        public IpcException(int errorCode) 
         {
             m_errorCode = errorCode;
         }
 
         /// <summary>
-        /// Creates a new instance of the <see cref="System.Net.Rina.PortException"> class with the default error code. 
+        /// Creates a new instance of the <see cref="System.Net.Rina.IpcException"> class with the default error code. 
         /// </summary>
-        internal PortException(int errorCode, EndPoint endPoint) 
+        internal IpcException(int errorCode, EndPoint endPoint) 
         {
             m_EndPoint = endPoint;
             m_errorCode = errorCode;
@@ -50,13 +50,13 @@ namespace System.Net.Rina
                 ///       Creates a new instance of the <see cref="System.Net.Ports.PortException"> class with the specified error code as PortError. 
                 ///    </see></para> 
                 /// </devdoc>
-        internal PortException(PortError portError) 
+        internal IpcException(IpcError portError) 
         {
             m_errorCode = (int)portError;
         }
 
 
-        protected PortException(SerializationInfo serializationInfo, StreamingContext streamingContext)
+        protected IpcException(SerializationInfo serializationInfo, StreamingContext streamingContext)
         : base(serializationInfo, streamingContext)
         {
         }
@@ -93,7 +93,7 @@ namespace System.Net.Rina
         }
 
 
-        public PortError PortErrorCode
+        public IpcError PortErrorCode
         {
             //
             // the base class returns the HResult with this property 
@@ -101,7 +101,7 @@ namespace System.Net.Rina
             //
             get
             {
-                return (PortError)m_errorCode;
+                return (IpcError)m_errorCode;
             }
         }
 

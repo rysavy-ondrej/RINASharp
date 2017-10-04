@@ -9,7 +9,7 @@ namespace System.Net.Rina
     /// <summary>
     /// Defines port operation error constants.
     /// </summary>
-    public enum PortError : int
+    public enum IpcError : int
     {
         /// <summary>
         ///  The operation completed successfully.
@@ -55,7 +55,7 @@ namespace System.Net.Rina
         /// <summary>
         /// Socket operation on nonsocket.
         /// </summary>
-        NotSocket = (10000 + 38),
+        NotPort = (10000 + 38),
         /// <summary>
         /// Destination address required.
         /// </summary>
@@ -192,6 +192,7 @@ namespace System.Net.Rina
         /// </summary>
         NoData = (10000 + 1004),
 
-        OperationAborted
+        OperationAborted,
+        ConnectionNotFound
     }
 }

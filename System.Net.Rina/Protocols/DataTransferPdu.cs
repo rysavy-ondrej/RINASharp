@@ -27,7 +27,7 @@ using System.Runtime.Serialization.Formatters.Binary;
 namespace System.Net.Rina
 {
 	[Serializable]
-	public class DataTransferProtocol : ISerializable
+	public class DataTransferPdu : ISerializable
 	{
 		public ushort DestinationAddress { get; set;} 	
 		public ushort SourceAddress { get; set;}  		
@@ -52,7 +52,7 @@ namespace System.Net.Rina
 			return this.payload;
 		}
 			
-		public DataTransferProtocol (ushort destAddr, ushort srcAddr, ushort destCEPid, ushort srcCEPid, byte qosid, byte pdu_type, byte flags, uint seqNum, byte[] payload)
+		public DataTransferPdu (ushort destAddr, ushort srcAddr, ushort destCEPid, ushort srcCEPid, byte qosid, byte pdu_type, byte flags, uint seqNum, byte[] payload)
 		{
 			this.DestinationAddress = destAddr;
 			this.SourceAddress = srcAddr;
@@ -65,7 +65,7 @@ namespace System.Net.Rina
 			this.payload = payload;
 		}
 
-		public DataTransferProtocol ( ushort destAddr, ushort srcAddr, ushort destCEPid, ushort srcCEPid, byte pdu_type, byte[] payload)
+		public DataTransferPdu ( ushort destAddr, ushort srcAddr, ushort destCEPid, ushort srcCEPid, byte pdu_type, byte[] payload)
 		{
 			this.DestinationAddress = destAddr;
 			this.SourceAddress = srcAddr;
@@ -79,7 +79,7 @@ namespace System.Net.Rina
 		}
 
 
-		public DataTransferProtocol ( ushort destAddr, ushort srcAddr, ushort destCEPid, ushort srcCEPid, byte[] payload)
+		public DataTransferPdu ( ushort destAddr, ushort srcAddr, ushort destCEPid, ushort srcCEPid, byte[] payload)
 		{
 			this.DestinationAddress = destAddr;
 			this.SourceAddress = srcAddr;
@@ -91,7 +91,7 @@ namespace System.Net.Rina
 			this.payload = payload;
 		}
 
-		public DataTransferProtocol ( ushort destAddr, ushort srcAddr, ushort destCEPid, ushort srcCEPid, byte pdu_type)
+		public DataTransferPdu ( ushort destAddr, ushort srcAddr, ushort destCEPid, ushort srcCEPid, byte pdu_type)
 		{
 			this.DestinationAddress = destAddr;
 			this.SourceAddress = srcAddr;
@@ -103,7 +103,7 @@ namespace System.Net.Rina
 			this.SequenceNumber = 0;
 		}
 
-		public DataTransferProtocol(byte[] bytes) {
+		public DataTransferPdu(byte[] bytes) {
 			this.DestinationAddress = BitConverter.ToUInt16(bytes, 0); //2 bytes
 			this.SourceAddress = BitConverter.ToUInt16(bytes, 2);  //2 bytes
 			this.DestinationCepId =  BitConverter.ToUInt16(bytes,4);//2 bytes
@@ -125,10 +125,10 @@ namespace System.Net.Rina
             return ms.GetBuffer();
 		}
 
-        public static DataTransferProtocol Deserialize(byte[] bytes)
+        public static DataTransferPdu Deserialize(byte[] bytes)
         {
             var ms = new IO.MemoryStream(bytes);
-            return (DataTransferProtocol)binaryFormatter.Deserialize(ms);
+            return (DataTransferPdu)binaryFormatter.Deserialize(ms);
         }
 
 		#region ISerializable implementation
@@ -144,7 +144,7 @@ namespace System.Net.Rina
 			info.AddValue ("8", this.SequenceNumber);
 			info.AddValue ("9", this.payload);
 		}
-		protected DataTransferProtocol(SerializationInfo info, StreamingContext context)
+		protected DataTransferPdu(SerializationInfo info, StreamingContext context)
 		{
 			this.DestinationAddress = info.GetUInt16 ("1");
 			this.SourceAddress = info.GetUInt16 ("2");

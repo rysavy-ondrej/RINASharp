@@ -98,7 +98,7 @@ namespace System.Net.Rina.Shims.NamedPipes
             if (!isConnected)
             {
                 pd.pipe.Close();
-                m_callback.OnAsyncDisconnect(pd.pipe, pd.state);
+                m_callback.OnPipeAsyncDisconnect(pd.pipe, pd.state);
                 lock (m_pipes)
                 {
                     bool removed = m_pipes.Remove(pd.pipe);
@@ -132,7 +132,7 @@ namespace System.Net.Rina.Shims.NamedPipes
             PipeData pd = (PipeData)result.AsyncState;
             Int32 bytesRead = pd.pipe.EndRead(result);
             if (bytesRead != 0)
-                m_callback.OnAsyncMessage(pd.pipe, pd.data, bytesRead, pd.state);
+                m_callback.OnPipeAsyncMessage(pd.pipe, pd.data, bytesRead, pd.state);
             BeginRead(pd);
         }
 
@@ -164,7 +164,7 @@ namespace System.Net.Rina.Shims.NamedPipes
                 IpcServerPipeCreate();
 
                 // Alert server that client connection exists
-                m_callback.OnAsyncConnect(pipe, out pd.state);
+                m_callback.OnPipeAsyncConnect(pipe, out pd.state);
 
                 // Accept messages
                 BeginRead(pd);

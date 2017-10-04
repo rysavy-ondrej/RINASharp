@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 namespace System.Net.Rina
 {
-    public enum IpcProcessType { Rina, WcfShim, PipeShim, IpShim, TcpShim, UdpShim, EtherShim };
+    public enum IpcProcessType { Rina, PipeShim, IpShim, TcpShim, UdpShim, EtherShim };
 
 
     public static class IpcProcessFactory
@@ -16,8 +16,6 @@ namespace System.Net.Rina
         {
             switch (processType)
             {
-                case IpcProcessType.WcfShim:
-                    return Shims.WcfIpcProcess.Create(host, localAddress);
                 case IpcProcessType.PipeShim:
                     return Shims.PipeIpcProcess.Create(host, localAddress);
                 default:

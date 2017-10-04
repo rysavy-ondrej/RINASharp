@@ -37,7 +37,7 @@ namespace TimeService
         {
             ServerName = "TimeServer";
             Address = "Dublin";
-            ShimDif = IpcProcessType.WcfShim.ToString();
+            ShimDif = IpcProcessType.PipeShim.ToString();
         }
 
         /// <summary>
@@ -48,7 +48,7 @@ namespace TimeService
         [CommandHandler]
         public void Handler(IConsoleAdapter console, IErrorAdapter error)
         {
-            var shimType = IpcProcessType.WcfShim;
+            var shimType = IpcProcessType.PipeShim;
             Enum.TryParse<IpcProcessType>(ShimDif, true, out shimType);
 
             using (var host = new IpcHost())
@@ -74,25 +74,21 @@ namespace TimeService
         /// <summary>
         /// This method is called for creating a new instance for the server and executing its worker thread.
         /// </summary>
-        private Task acceptFlowHandler(IRinaIpc context, FlowInformation flowInformation, Port port)
+        private void acceptFlowHandler(IRinaIpc context, FlowInformation flowInformation, Port port)
         {
-            return Task.Run(() =>
+            port.Blocking = true;
+            using (var stream = new IpcChannelStream(port))
+            using (var tr = new StreamReader(stream))
+            using (var tw = new StreamWriter(stream))
             {
-                port.Blocking = true;    
-                using (var stream = new IpcChannelStream(port))
-                using (var tr = new StreamReader(stream))
-                using (var tw = new StreamWriter(stream))
+                var line = tr.ReadLine();
+                switch ((line ?? String.Empty).Trim())
                 {
-                    var line = tr.ReadLine();
-                    switch ((line ?? String.Empty).Trim())
-                    {
-                        case "DateTime.Now": tw.WriteLine($"OK: {DateTime.Now}"); break;
-                        default: tw.WriteLine("ERROR: Invalid request!"); break;
-                    }
-                    port.Shutdown(Timeout.InfiniteTimeSpan);
+                    case "DateTime.Now": tw.WriteLine($"OK: {DateTime.Now}"); break;
+                    default: tw.WriteLine("ERROR: Invalid request!"); break;
                 }
-            });
-
+                port.Shutdown(Timeout.InfiniteTimeSpan);
+            }            
         }
     }
 }

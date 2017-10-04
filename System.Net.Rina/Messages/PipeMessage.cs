@@ -18,7 +18,8 @@ namespace System.Net.Rina.Shims.NamedPipes
     /// Values in intervals 3..254 can 
     /// be used for custom result specification.
     /// </summary>
-    public enum ConnectResult {
+    public enum ConnectResult : ushort
+    {
         /// <summary>
         /// Connection was accepted by the application.
         /// </summary>
@@ -34,13 +35,13 @@ namespace System.Net.Rina.Shims.NamedPipes
         /// <summary>
         /// Application was not found.
         /// </summary>
-        NotFound,
+        NotFound = 4,
         Fail = 255 }
 
     /// <summary>
     /// Specifies a way used for closing the connection.
     /// </summary>
-    public enum DisconnectFlags : int
+    public enum DisconnectFlags : ushort
     {
         /// <summary>
         /// Connection is aborted that means all pending data should be discarded.
@@ -57,7 +58,7 @@ namespace System.Net.Rina.Shims.NamedPipes
         Close = 3
     };
 
-    public enum PipeMessageType { ConnectRequest, ConnectResponse, DisconnectRequest, DisconnectResponse, Data }
+    public enum PipeMessageType : ushort { ConnectRequest, ConnectResponse, DisconnectRequest, DisconnectResponse, Data }
     /// <summary>
     /// Send by PipeIpc when the new connection is requested.
     /// </summary>
@@ -124,7 +125,7 @@ namespace System.Net.Rina.Shims.NamedPipes
         protected override void Deserialize(BinaryReader reader)
         {
             base.Deserialize(reader);
-            Result = (ConnectResult)reader.ReadByte();
+            Result = (ConnectResult)reader.ReadUInt16();
             RequesterCepId = reader.ReadUInt64();
             ResponderCepId = reader.ReadUInt64();
         }
@@ -132,7 +133,7 @@ namespace System.Net.Rina.Shims.NamedPipes
         protected override void Serialize(BinaryWriter writer, PipeMessageType mtype)
         {
             base.Serialize(writer, mtype);
-            writer.Write((byte)Result);
+            writer.Write((ushort)Result);
             writer.Write(RequesterCepId);
             writer.Write(ResponderCepId);
         }
@@ -192,13 +193,13 @@ namespace System.Net.Rina.Shims.NamedPipes
         protected override void Deserialize(BinaryReader reader)
         {
             base.Deserialize(reader);
-            Flags = (DisconnectFlags)reader.ReadInt32();
+            Flags = (DisconnectFlags)reader.ReadUInt16();
         }
 
         protected override void Serialize(BinaryWriter writer, PipeMessageType mtype)
         {
             base.Serialize(writer, mtype);
-            writer.Write((int)Flags);
+            writer.Write((ushort)Flags);
         }
     }
 
@@ -215,7 +216,7 @@ namespace System.Net.Rina.Shims.NamedPipes
         protected override void Deserialize(BinaryReader reader)
         {
             base.Deserialize(reader);
-            Flags = (DisconnectFlags)reader.ReadInt32();
+            Flags = (DisconnectFlags)reader.ReadUInt16();
         }
 
         protected override void Serialize(BinaryWriter writer, PipeMessageType mtype)
@@ -231,6 +232,13 @@ namespace System.Net.Rina.Shims.NamedPipes
     [Serializable]
     public abstract class PipeMessage 
     {
+
+        /// <summary>
+        /// Represents a time-stamp when the message was created. This value is not serialized.
+        /// </summary>
+        [NonSerialized]
+        public DateTime TimestampCreated;
+
         /// <summary>
         /// Destination address of the message.
         /// </summary>
@@ -297,7 +305,7 @@ namespace System.Net.Rina.Shims.NamedPipes
 
         protected static PipeMessageType getTypeFromWord(UInt16 value)
         {
-            var msgtype = value & 0xff;
+            var msgtype = (ushort)(value & 0xff);
 
             if (!Enum.IsDefined(typeof(PipeMessageType), msgtype)) throw new ArgumentException($"Given message type value {msgtype} was not recognized.", nameof(value));
 
@@ -333,6 +341,34 @@ namespace System.Net.Rina.Shims.NamedPipes
     }
     internal static class PipeMessageEncoder
     {
+        public static async Task<PipeMessage> ReadMessageAsync(PipeStream pipeStream)
+        {
+            var buffer = new byte[128];
+            using (var ms = new MemoryStream())
+            {
+                do
+                {
+                    var len = await pipeStream.ReadAsync(buffer, 0, buffer.Length);
+                    if (len < 0) break;
+                    ms.Write(buffer, 0, len);
+                }
+                while (!pipeStream.IsMessageComplete);
+                var count = (int)ms.Position;
+                ms.Position = 0;
+                try
+                {
+                    var msg = PipeMessage.Deserialize(ms);
+                    Trace.TraceInformation($"PipeMessageEncoder.ReadMessage: Message {msg.MessageType}, len = {count}B: {BitConverter.ToString(ms.GetBuffer(), 0, count)}");
+                    return msg;
+                }
+                catch (Exception e)
+                {
+                    Trace.TraceError($"{nameof(ReadMessage)}: Error when deserializing message: {e.Message}");
+                    return null;
+                }
+            }
+        }
+
         internal static PipeMessage ReadMessage(byte[] data, int offset, int bytes)
         {            
             using (var ms = new MemoryStream(data, 0, bytes))
@@ -350,45 +386,16 @@ namespace System.Net.Rina.Shims.NamedPipes
                 }
             }
         }
-
-        internal static PipeMessage ReadMessage(PipeStream pipeStream)
-        {
-            var buffer = new byte[128];
-            using (var ms = new MemoryStream())
-            {
-                do
-                {
-                    var len = pipeStream.Read(buffer, 0, buffer.Length);
-                    if (len < 0) break;
-                    ms.Write(buffer, 0, len);
-                }
-                while (!pipeStream.IsMessageComplete);
-                var count = (int)ms.Position;
-                ms.Position = 0;                
-                try
-                {
-                    var msg = PipeMessage.Deserialize(ms);
-                    Trace.TraceInformation($"PipeMessageEncoder.ReadMessage: Message {msg.MessageType}, len = {count}B: {BitConverter.ToString(ms.GetBuffer(), 0, count)}");
-                    return msg;
-                }
-                catch (Exception e)
-                {
-                    Trace.TraceError($"{nameof(ReadMessage)}: Error when deserializing message: {e.Message}");
-                    return null;
-                }
-            }
-        }
-
         /// <summary>
         /// Writes a <see cref="PipeMessage<"/> to a specified <see cref="PipeStream"/>.
         /// It uses intermediate buffer represented by <see cref="MemoryStream"/> 
         /// because each calling of <see cref="PipeStream.Write(byte[], int, int)"/> 
         /// creates a new message.
         /// </summary>
-        /// <param name="pipeStream">A <see cref="PipeStream"/> to which the message is written.</param>
+        /// <param name="stream">A <see cref="PipeStream"/> to which the message is written.</param>
         /// <param name="message">An object derived from <see cref="PipeMessage"/> representing the message.</param>
         /// <returns>The number of bytes written to the <see cref="PipeStream"/> object.</returns>
-        internal static int WriteMessage(PipeMessage message, Stream pipeStream)
+        internal static int WriteMessage(PipeMessage message, Stream stream)
         {
             using (var ms = new MemoryStream())
             {
@@ -396,8 +403,20 @@ namespace System.Net.Rina.Shims.NamedPipes
                 var buf = ms.GetBuffer();
                 var count = (int)ms.Position;
                 Trace.TraceInformation($"PipeMessageEncoder.WriteMessage: Message {message.MessageType}, len={count}B: {BitConverter.ToString(buf, 0, count)}");
-                pipeStream.Write(buf, 0, count);
+                stream.Write(buf, 0, count);
                 return count;
+            }
+        }
+
+        internal static Task WriteMessageAsync(PipeMessage message, Stream stream)
+        {
+            using (var ms = new MemoryStream())
+            {
+                message.Serialize(ms);
+                var buf = ms.GetBuffer();
+                var count = (int)ms.Position;
+                Trace.TraceInformation($"PipeMessageEncoder.WriteMessage: Message {message.MessageType}, len={count}B: {BitConverter.ToString(buf, 0, count)}");
+                return stream.WriteAsync(buf, 0, count);
             }
         }
 

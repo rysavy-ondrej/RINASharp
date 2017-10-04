@@ -61,6 +61,7 @@
     <Compile Include="Exceptions\PortError.cs" />
     <Compile Include="Helpers\UniqueRandom.cs" />
     <Compile Include="Helpers\IpcChannelStream.cs" />
+    <Compile Include="Internals\BufferBlockEx.cs" />
     <Compile Include="Internals\ReceiveBufferBlock.cs" />
     <Compile Include="Internals\ByteArraySegment.cs" />
     <Compile Include="Internals\FifoStream.cs" />
@@ -69,6 +70,7 @@
     <Compile Include="IpcProcessBase.cs" />
     <Compile Include="IpcProcessFactory.cs" />
     <None Include="PortAsyncEventArgs.cs" />
+    <Compile Include="IRinaIpcAsync.cs" />
     <Compile Include="Protocols\CDAPMessage.cs" />
     <Compile Include="ConnectionState.cs" />
     <Compile Include="Shims\NamedPipes\IPipeCallback.cs" />
@@ -77,7 +79,7 @@
     <Compile Include="Shims\NamedPipes\PipeIpcProcess.cs" />
     <Compile Include="Shims\NamedPipes\PipePool.cs" />
     <Compile Include="Shims\NamedPipes\PipeServer.cs" />
-    <Compile Include="Shims\NamedPipes\PipeMessage.cs" />
+    <Compile Include="Messages\PipeMessage.cs" />
     <Compile Include="Transport\DataTransferControlService.cs" />
     <Compile Include="Naming\StaticNameService.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
@@ -94,7 +96,7 @@
     <Compile Include="Transport\DataTransferService.cs" />
     <Compile Include="Routing\RoutingService.cs" />
     <Compile Include="Routing\LinkStateRoutingService.cs" />
-    <Compile Include="Protocols\DataTransferProtocol.cs" />
+    <Compile Include="Protocols\DataTransferPdu.cs" />
     <Compile Include="IRinaIpc.cs" />
     <Compile Include="FlowInformation.cs" />
     <Compile Include="QoSParameters.cs" />
@@ -113,13 +115,11 @@
   </ItemGroup>
   <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.targets" />
   <ItemGroup>
-    <Folder Include="Messages\" />
     <Folder Include="Shims\Ethernet\" />
     <Folder Include="Shims\InterNetworkV6\" />
     <Folder Include="Shims\InterNetwork\" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
-    <Compile Include="Shims\Wcf\WcfIpcProcess.cs" />
   </ItemGroup>
 </Project>

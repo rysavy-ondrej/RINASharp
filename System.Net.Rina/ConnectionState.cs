@@ -11,7 +11,7 @@
         Open,
 
         /// <summary>
-        /// Connection is tracked but it is closed.
+        /// Connection is tracked but it is closed. The connection is removed after a predefined timeout.
         /// </summary>
         Closed,
 
@@ -21,7 +21,7 @@
         Connecting,
 
         /// <summary>
-        /// Connection is currently closing (it may be in graceful shutdown process).
+        /// Connection is currently closing but does not accept any data.
         /// </summary>
         Closing,
 

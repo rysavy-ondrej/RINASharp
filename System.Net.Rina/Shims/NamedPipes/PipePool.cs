@@ -38,7 +38,7 @@ namespace System.Net.Rina.Shims.NamedPipes
         ///
         /// <param name="address"></param>
         /// <returns></returns>
-        internal PipeClient GetOrCreatePipe(Address address)
+        internal PipeClient GetOrCreatePipe(Address address, IPipeCallback callback)
         {
             if (address.Family != Address.Uri) throw new ArgumentException($"Address of type {nameof(Address.Uri)} expected.", nameof(address));
 
@@ -46,7 +46,7 @@ namespace System.Net.Rina.Shims.NamedPipes
             var uriUnc = uri.IsUnc ? uri : uri.AsPipeNameUnc();
             var host = uriUnc.Host;
             var pipe = Path.GetFileName(uriUnc.PathAndQuery);
-            return GetOrCreatePipe(host, pipe);
+            return GetOrCreatePipe(host, pipe, callback);
         }
 
 
@@ -64,7 +64,7 @@ namespace System.Net.Rina.Shims.NamedPipes
         /// shared for all communication. While this method attempts to connect the <see
         /// cref="PipeClient"/> the caller should check that the pipe is really connected.
         /// </remarks>
-        internal PipeClient GetOrCreatePipe(string serverName, string pipeName)
+        internal PipeClient GetOrCreatePipe(string serverName, string pipeName, IPipeCallback callback)
         {
             if (serverName == null) throw new ArgumentNullException(nameof(serverName));
             if (pipeName == null) throw new ArgumentNullException(nameof(pipeName));
@@ -74,19 +74,24 @@ namespace System.Net.Rina.Shims.NamedPipes
             if (!m_pipeClients.TryGetValue(addressKey, out pipeClientReference))
             {   // create a new object
                 Trace.TraceInformation($"{nameof(GetOrCreatePipe)}: pipeClient associated with key {addressKey} cannot be found, I will create new pipeClient.");
-                pipeClient = PipeClient.Create(serverName, pipeName);
+                pipeClient = PipeClient.Create(serverName, pipeName, callback);
                 pipeClientReference = new WeakReference<PipeClient>(pipeClient);
                 m_pipeClients[addressKey] = pipeClientReference;
             }
             if (!pipeClientReference.TryGetTarget(out pipeClient))
             {   // recreate a new object
                 Trace.TraceInformation($"{nameof(GetOrCreatePipe)}: pipeClient with key {addressKey} is dead, I will recreate it.");
-                pipeClient = PipeClient.Create(serverName, pipeName);
+                pipeClient = PipeClient.Create(serverName, pipeName, callback);
                 pipeClientReference.SetTarget(pipeClient);
             }
 
             if (!pipeClient.IsConnected) pipeClient.Connect(pipeConnectTimeout);
             return pipeClient;
+        }
+
+        internal void ReleasePipe(PipeClient pipeClient)
+        {
+            Trace.TraceInformation($@"Releasing \\{pipeClient.ServerName}\{pipeClient.PipeName}.");
         }
     }
 }

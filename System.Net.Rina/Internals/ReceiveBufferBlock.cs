@@ -62,14 +62,14 @@ namespace System.Threading.Tasks.Dataflow
         /// A number of elements supplied by this function. If no data is available it returns 0. In
         /// case of some error occurred it returns -1.
         /// </returns>
-        public int Read(T[] buffer, int offset, int size, TimeSpan timeout)
+        public async Task<int> ReadAsync(T[] buffer, int offset, int size, CancellationToken ct)
         {
             // if no data are in receive buffer then load some message:
             if (m_head == null)
             {
                 try
                 {
-                    m_head = m_tail.Receive(timeout);
+                    m_head = await m_tail.ReceiveAsync(ct);
 
                 }
                 catch (TimeoutException)

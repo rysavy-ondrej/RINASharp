@@ -88,7 +88,7 @@ namespace TimeServiceClient
         {
             ClientName = "TimeClient";
             LocalAddress = "Brno";
-            ShimDif = IpcProcessType.WcfShim.ToString();
+            ShimDif = IpcProcessType.PipeShim.ToString();
         }
 
         /// <summary>

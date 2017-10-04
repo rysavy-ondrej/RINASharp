@@ -1,18 +1,41 @@
 ﻿using System.Collections.Generic;
 using System.Diagnostics;
-using System.Threading;
+using System.Net.Rina.Shims.NamedPipes;
+using System.Net.Sockets;
+using System.Threading.Tasks;
 using System.Threading.Tasks.Dataflow;
 
 namespace System.Net.Rina
 {
+    public static class SendQueueFactory
+    {
+        public static SendQueueBlock CreateSimpleSendBuffer(ConnectionEndpoint cep)
+        {
+            var input = new BufferBlock<ArraySegment<byte>>();
+            var emitter = new TransformBlock<ArraySegment<byte>, PipeMessage>(data =>
+            {
+                return new PipeDataMessage()
+                {
+                    TimestampCreated = DateTime.Now,
+                    SourceAddress = cep.Information.SourceAddress,
+                    DestinationAddress = cep.Information.DestinationAddress,
+                    DestinationCepId = cep.RemoteCepId,
+                    Data = data
+                };
+            });
+            return new SendQueueBlock(input, emitter);
+        }
+    }
+
     public class CepIdSpace
     {
-        Helpers.UniqueRandomUInt64 m_space = new Helpers.UniqueRandomUInt64();
+        private Helpers.UniqueRandomUInt64 m_space = new Helpers.UniqueRandomUInt64();
 
         public CepIdType Next()
         {
             return new CepIdType(m_space.Next());
         }
+
         public void Release(CepIdType val)
         {
             m_space.Release(val);
@@ -21,7 +44,9 @@ namespace System.Net.Rina
 
     public class CepIdType : Kleinware.LikeType.LikeType<UInt64>
     {
-        public CepIdType(ulong value, bool isNullAllowed = false) : base(value, isNullAllowed) {  }
+        public CepIdType(ulong value, bool isNullAllowed = false) : base(value, isNullAllowed)
+        {
+        }
     }
 
     /// <summary>
@@ -39,54 +64,73 @@ namespace System.Net.Rina
         /// implements <see cref="ISourceBlock{TOutput}"/> it is possible to link this queue to the
         /// sender block which enables the implementor to create an arbitrary a processing pipeline.
         /// </summary>
-        public readonly BufferBlock<ArraySegment<byte>> SendQueue = new BufferBlock<ArraySegment<byte>>();
-        
+        public readonly SendQueueBlock SendQueue;
+
         /// <summary>
         /// Provides information about the connection associated with the current ConnectionEndpoint.
         /// </summary>
         public ConnectionInformation Information;
 
         /// <summary>
-        /// Local ConnectionEndPoint Id is used to identify the connection.
+        /// Keeps the record of incoming control messages waiting for processing by internal
+        /// logic of the IPC connection manager.
         /// </summary>
-        public CepIdType LocalCepId;
+        internal readonly BufferBlock<PipeMessage> ControlMessageBuffer = new BufferBlock<PipeMessage>();
 
         /// <summary>
-        /// Remote ConnectionEndPoint Id is used to identify the connection.
+        /// Stores <see cref="AddressFamily"/> of the current connection end point.
         /// </summary>
-        public CepIdType RemoteCepId;
+        private AddressFamily m_addressFamily;
 
         /// <summary>
-        /// A port associated with the connection end point. This can be null if 
-        /// the connection is not bound. 
+        /// Stores <see cref="ConnectionType"/> of the current connection end point.
         /// </summary>
-        internal Port Port;
+        private ConnectionType m_connectionType;
+
+        private IpcProcessBase m_ipc;
 
         /// <summary>
-        /// Indicates that all data were successfully send from the send queue and the queue does not
-        /// accept any more data. This needs to be set in the derived class as completion can be
-        /// confirmed by the last <see cref="ActionBlock{TInput}"/> of the sender pipeline.
+        /// Stores the local connection end point identifier.
         /// </summary>
-        internal ManualResetEventSlim UpflowClosedEvent = new ManualResetEventSlim(false);
+        private CepIdType m_localCepId;
+
+        /// <summary>
+        /// Stores the <see cref="Port"/> instance of the associated port or null if no port is bound to this connection end point.
+        /// </summary>
+        private Port m_port;
+
+        /// <summary>
+        /// Stores the remote connection end point identifier for connected connection or null for detached connection.
+        /// </summary>
+        private CepIdType m_remoteCepId;
 
         /// <summary>
         /// Stores the state of the current <see cref="ConnectionEndpoint"/>.
         /// </summary>
-        protected ConnectionState m_state = ConnectionState.Detached;
+        private ConnectionState m_state = ConnectionState.Detached;
+
+        public ConnectionEndpoint(AddressFamily af, ConnectionType ct, CepIdType cepId) : this()
+        {
+            this.m_addressFamily = af;
+            this.m_connectionType = ct;
+            this.m_localCepId = cepId;
+        }
+
         /// <summary>
         /// Creates a new instance of <see cref="ConnectionEndpoint"/> initialized to default value.
         /// </summary>
-        public ConnectionEndpoint()
+        protected ConnectionEndpoint()
         {
             ReceiveBufferSize = 4096 * 4;
             ReceiveTimeout = TimeSpan.FromSeconds(30);
             Blocking = true;
+            SendQueue = SendQueueFactory.CreateSimpleSendBuffer(this);
         }
 
         /// <summary>
         /// Represents an address family used with this connection end point.
         /// </summary>
-        public Sockets.AddressFamily AddressFamily { get; internal set; }
+        public AddressFamily AddressFamily { get; internal set; }
 
         /// <summary>
         /// Specifies whether the port is blocking or non-blocking.
@@ -110,7 +154,18 @@ namespace System.Net.Rina
         public CepIdType Id { get { return LocalCepId; } }
 
         /// <summary>
-        /// Sets or gets the maximum number of bytes that can be buffered.
+        /// Local ConnectionEndPoint Id is used to identify the connection.
+        /// </summary>
+        public CepIdType LocalCepId { get { return m_localCepId; } }
+
+        /// <summary>
+        /// A port associated with the connection end point. This can be null if
+        /// the connection is not bound.
+        /// </summary>
+        public Port Port { get { return m_port; } }
+
+        /// <summary>
+        /// Gets the size, in bytes, of the inbound buffer for a connection.
         /// </summary>
         public int ReceiveBufferSize { set; get; }
 
@@ -130,21 +185,44 @@ namespace System.Net.Rina
         /// </summary>
         public TimeSpan ReceiveTimeout { set; get; }
 
+        /// <summary>
+        /// Remote ConnectionEndPoint Id is used to identify the connection.
+        /// </summary>
+        public CepIdType RemoteCepId { get { return m_remoteCepId; } }
+
+        /// <summary>
+        /// Gets the size, in bytes, of the outbound buffer for a connection.
+        /// </summary>
+        public int SendBufferSize { set; get; }
+
+        /// <summary>
+        /// Gets a <see cref="Task"/> that represents completion of the send block.
+        /// </summary>
+        public abstract Task SendCompletion
+        {
+            get;
+        }
+
+        /// <summary>
+        /// Gets the current state of the <see cref="ConnectionEndpoint"/>. State can be changed
+        /// using <see cref="Open(CepIdType)"/>, <see cref="Close(bool)"/>, <see cref="ReadOnly"/>, or
+        /// <see cref="WriteOnly"/> method.
+        /// </summary>
         public virtual ConnectionState State
         {
             get
             {
-                return m_state;
-            }
-            internal set
-            {
-                if (m_state != value)
-                {
-                    OnStateChanged(m_state, value);
-                    m_state = value;
-                }
+                return (m_ipc == null) ? ConnectionState.Detached : m_ipc.GetConnectionState(this);
             }
         }
+
+        /// <summary>
+        /// Asynchronously sends message without buffering. Useful for operations may require to
+        /// bypass the usual processing data path.
+        /// </summary>
+        /// <param name="message">A message to be sent.</param>
+        public abstract Task SendMessageAsync(PipeMessage message);
+
         /// <summary>
         /// Returns a <see cref="String"/> describing the current object.
         /// </summary>
@@ -155,16 +233,31 @@ namespace System.Net.Rina
         }
 
         /// <summary>
-        /// Called when state is to be changed from the <paramref name="oldValue"/> to <paramref name="newValue"/>.
+        /// Binds the port to the current connection.
         /// </summary>
-        /// <param name="oldValue"></param>
-        /// <param name="newValue"></param>
-        protected virtual void OnStateChanged(ConnectionState oldValue, ConnectionState newValue)
+        /// <param name="port"></param>
+        internal void BindPort(Port port)
         {
-            if (oldValue == ConnectionState.Open && newValue == ConnectionState.Closed)
-                OnAbort();
-            if (oldValue == ConnectionState.Open && newValue == ConnectionState.Closing)
-                OnClose();
+            m_port = port;
+        }
+
+        /// <summary>
+        /// Closes the ConnectionEndpoint.
+        /// </summary>
+        /// <param name="abort"></param>
+        internal void Close(bool abort = false)
+        {
+            if (abort) OnAbort();
+            else OnClose();
+        }
+
+        /// <summary>
+        /// Opens the connection by associating the connection with the remote CepId.
+        /// </summary>
+        /// <param name="remoteCepId"></param>
+        internal void Open(CepIdType remoteCepId)
+        {
+            m_remoteCepId = remoteCepId;
         }
 
         /// <summary>
@@ -175,19 +268,91 @@ namespace System.Net.Rina
         protected virtual void OnAbort()
         {
             IList<ArraySegment<byte>> remainingItems = null;
-            if (SendQueue.TryReceiveAll(out remainingItems))
+            if (SendQueue.DiscardAll(out remainingItems))
             {
                 Trace.TraceInformation($"{nameof(OnAbort)}: There were {remainingItems.Count} messages in the {nameof(SendQueue)}.");
             }
             SendQueue.Complete();
         }
+
         /// <summary>
         /// Called when connection is closed. It just call <see cref="IDataflowBlock.Complete"/> method of
-        /// <see cref="SendQueue"/> object.
+        /// <see cref="SendQueue"/> object. Call this method from derived classes if you do not implement a
+        /// specific completion code for <see cref="SendQueue"/>.
         /// </summary>
         protected virtual void OnClose()
         {
             SendQueue.Complete();
+        }
+
+        /// <summary>
+        /// Called when state is to be changed from the <paramref name="oldValue"/> to <paramref name="newValue"/>.
+        /// </summary>
+        /// <param name="oldValue"></param>
+        /// <param name="newValue"></param>
+        protected virtual void OnStateChanged(ConnectionState oldValue, ConnectionState newValue) { }
+    }
+
+    public class SendQueueBlock : IPropagatorBlock<ArraySegment<byte>, PipeMessage>
+    {
+        private BufferBlock<ArraySegment<byte>> m_inputBuffer;
+        private TransformBlock<ArraySegment<byte>, PipeMessage> m_emitter;
+        private IPropagatorBlock<ArraySegment<byte>, PipeMessage> m_block;
+        
+        public SendQueueBlock(BufferBlock<ArraySegment<byte>> inputBuffer, TransformBlock<ArraySegment<byte>, PipeMessage> emitter) 
+        {
+            m_inputBuffer = inputBuffer;
+            m_emitter = emitter;
+            m_inputBuffer.LinkTo(m_emitter, new DataflowLinkOptions() { PropagateCompletion = true });
+            m_block = DataflowBlock.Encapsulate(m_inputBuffer, m_emitter);            
+        }
+
+        public Task Completion
+        {
+            get
+            {
+                return m_block.Completion;
+            }
+        }
+
+        public void Complete()
+        {
+            m_block.Complete();
+        }
+
+        public PipeMessage ConsumeMessage(DataflowMessageHeader messageHeader, ITargetBlock<PipeMessage> target, out bool messageConsumed)
+        {
+            return m_block.ConsumeMessage(messageHeader, target, out messageConsumed);
+        }
+
+        public void Fault(Exception exception)
+        {
+            m_block.Fault(exception);
+        }
+
+        public IDisposable LinkTo(ITargetBlock<PipeMessage> target, DataflowLinkOptions linkOptions)
+        {
+            return m_block.LinkTo(target, linkOptions);
+        }
+
+        public DataflowMessageStatus OfferMessage(DataflowMessageHeader messageHeader, ArraySegment<byte> messageValue, ISourceBlock<ArraySegment<byte>> source, bool consumeToAccept)
+        {
+            return m_block.OfferMessage(messageHeader, messageValue, source, consumeToAccept);
+        }
+
+        public void ReleaseReservation(DataflowMessageHeader messageHeader, ITargetBlock<PipeMessage> target)
+        {
+            m_block.ReleaseReservation(messageHeader, target);
+        }
+
+        public bool ReserveMessage(DataflowMessageHeader messageHeader, ITargetBlock<PipeMessage> target)
+        {
+            return m_block.ReserveMessage(messageHeader, target);
+        }
+
+        internal bool DiscardAll(out IList<ArraySegment<byte>> remainingItems)
+        {
+            return m_inputBuffer.TryReceiveAll(out remainingItems);
         }
     }
 }

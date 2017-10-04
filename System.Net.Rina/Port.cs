@@ -263,12 +263,12 @@ namespace System.Net.Rina
         /// <returns></returns>
         public int Receive(byte[] buffer,int offset,int size, PortFlags portFlags)
         {
-            return this.Ipc.Receive(this, buffer, offset, size, portFlags);
+            return Ipc.Receive(this, buffer, offset, size, portFlags);
         }
 
         public int Send(byte[] buffer, int offset, int count)
         {
-            return this.Ipc.Send(this, buffer, offset, count);
+            return Ipc.Send(this, buffer, offset, count);
         }
 
 
